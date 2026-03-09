@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+langgraph
+langgraph-checkpoint-sqlite
+httpx
+pydantic
+langchain-ollama
+langchain-experimental
+beautifulsoup4
+requests

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenColab Mission Control</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=2">
+</head>
+
+<body>
+    <div class="app-container">
+
+        <!-- Sidebar: Thread History -->
+        <aside class="sidebar" id="sidebar">
+            <div class="resize-handle" id="sidebarResizer"></div>
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon"></span>
+                    <h1>OpenColab</h1>
+                </div>
+                <p class="subtitle">Mission Control</p>
+            </div>
+
+            <div class="new-job-section">
+                <form id="newJobForm">
+                    <textarea id="promptInput" placeholder="Enter a complex prompt for the Orchestrator..."
+                        required></textarea>
+                    <button type="submit" id="submitBtn">
+                        <span class="btn-text">Launch Job</span>
+                        <div class="spinner hidden"></div>
+                    </button>
+                </form>
+            </div>
+
+            <div class="history-section">
+                <h3>Recent Threads</h3>
+                <ul id="threadList" class="thread-list">
+                    <!-- Threads populated by JS -->
+                </ul>
+            </div>
+        </aside>
+
+        <!-- Main Workspace: DAG Visualization -->
+        <main class="workspace">
+            <div class="global-telemetry">
+                <div class="telemetry-item">
+                    <span class="telemetry-label">Active Workers</span>
+                    <span class="telemetry-value" id="activeWorkersCount">0</span>
+                </div>
+            </div>
+
+            <header class="workspace-header">
+                <div class="status-indicator">
+                    <div id="statusDot" class="dot"></div>
+                    <h2 id="currentStatusText">Idle</h2>
+                </div>
+
+                <div class="thread-controls" id="threadControls" style="display: none;">
+                    <button id="btnTogglePause" class="icon-btn" title="Pause/Resume Thread">⏸️ Pause</button>
+                    <button id="btnRestart" class="icon-btn" title="Restart Thread (Clone)">🔄 Restart</button>
+                    <div class="priority-selector">
+                        <label for="prioritySelect">Priority:</label>
+                        <select id="prioritySelect">
+                            <option value="10">High (10)</option>
+                            <option value="0" selected>Normal (0)</option>
+                            <option value="-10">Low (-10)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="thread-id-display">
+                    ID: <span id="currentThreadId">None Selected</span>
+                </div>
+            </header>
+
+            <div class="graph-container" id="graphContainer">
+                <!-- Nodes container -->
+                <div id="nodesContainer" class="nodes-container">
+                    <!-- SVG Canvas for drawing dependency lines -->
+                    <svg id="svgCanvas" class="svg-canvas"></svg>
+
+                    <!-- Nodes populated by JS -->
+                    <div class="empty-state" id="emptyState">
+                        <div class="empty-icon">☄️</div>
+                        <p>No active thread selected. Launch a new job to view the live dependency graph.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Task Detail Drawer -->
+            <div class="task-drawer" id="taskDrawer">
+                <div class="drawer-header">
+                    <h3>Task Details</h3>
+                    <button id="closeDrawerBtn" class="close-btn">&times;</button>
+                </div>
+                <div class="drawer-content">
+                    <div class="drawer-field">
+                        <label>Task ID</label>
+                        <div id="drawerTaskId" class="font-mono">...</div>
+                    </div>
+                    <div class="drawer-field">
+                        <label>Status</label>
+                        <div id="drawerStatusBadge" class="node-badge">...</div>
+                    </div>
+                    <div class="drawer-field">
+                        <label>Assigned Worker</label>
+                        <div id="drawerWorkerId" class="font-mono text-muted">None</div>
+                    </div>
+                    <div class="drawer-field">
+                        <label>Description</label>
+                        <p id="drawerDescription">...</p>
+                    </div>
+                    <div class="drawer-field">
+                        <label>Live Execution Logs / Final Output</label>
+                        <div class="terminal-container" id="terminalContainer">
+                            <pre id="drawerResult" class="code-block logs-text">Awaiting execution...</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- UI Templates -->
+    <template id="nodeTemplate">
+        <div class="dag-node text-center" data-id="">
+            <div class="node-header">
+                <span class="node-id"></span>
+                <span class="node-badge"></span>
+            </div>
+            <div class="node-body"></div>
+            <div class="node-indicators"
+                style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
+                <span
+                    style="font-size: 0.65rem; color: var(--text-muted); opacity: 0.6; text-transform: uppercase; letter-spacing: 0.5px;">Click
+                    for output ➔</span>
+                <span class="node-worker"
+                    style="font-size: 0.75rem; color: var(--accent-secondary); font-family: monospace; font-weight: bold; background: rgba(0, 242, 254, 0.1); padding: 2px 6px; border-radius: 4px;"></span>
+            </div>
+        </div>
+    </template>
+
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="/static/app.js?v=2"></script>
+</body>
+
+</html>
