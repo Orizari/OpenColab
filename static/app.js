@@ -10,6 +10,7 @@ let currentGraphState = null;
 // DOM Elements
 const form = document.getElementById('newJobForm');
 const promptInput = document.getElementById('promptInput');
+const imageInput = document.getElementById('imageInput');
 const btnText = document.querySelector('.btn-text');
 const spinner = document.querySelector('.spinner');
 const threadList = document.getElementById('threadList');
@@ -30,6 +31,7 @@ const sidebarResizer = document.getElementById('sidebarResizer');
 
 // Thread Controls
 const threadControls = document.getElementById('threadControls');
+const btnApproveDag = document.getElementById('btnApproveDag');
 const btnTogglePause = document.getElementById('btnTogglePause');
 const btnRestart = document.getElementById('btnRestart');
 const prioritySelect = document.getElementById('prioritySelect');
@@ -62,13 +64,25 @@ async function init() {
 
         btnText.textContent = "Launching...";
         try {
+            const formData = new FormData();
+            formData.append('prompt', prompt);
+            if (imageInput.files.length > 0) {
+                for (let i = 0; i < imageInput.files.length; i++) {
+                    const file = imageInput.files[i];
+                    formData.append('files', file);
+                    // Append parallel paths array. webkitRelativePath contains the full path from the selected folder root.
+                    // Fallback to file.name if it's a direct file selection.
+                    formData.append('paths', file.webkitRelativePath || file.name);
+                }
+            }
+
             const res = await fetch(`${API_BASE}/submit`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt })
+                body: formData
             });
             const data = await res.json();
             promptInput.value = '';
+            imageInput.value = '';
 
             // Instantly jump to new thread
             await fetchThreads();
@@ -105,6 +119,20 @@ async function init() {
             await fetchThreads();
             selectThread(data.thread_id);
         } catch (e) { console.error("Failed to restart", e); }
+    });
+
+    btnApproveDag.addEventListener('click', async () => {
+        if (!activeThreadId) return;
+        btnApproveDag.textContent = 'Approving...';
+        try {
+            await fetch(`${API_BASE}/api/threads/${activeThreadId}/approve_dag`, { method: 'POST' });
+            btnApproveDag.style.display = 'none';
+            btnApproveDag.textContent = '✅ Approve & Dispatch';
+            pollThreadStatus();
+        } catch (e) {
+            console.error("Failed to approve DAG", e);
+            btnApproveDag.textContent = '✅ Approve & Dispatch';
+        }
     });
 
     prioritySelect.addEventListener('change', async (e) => {
@@ -264,6 +292,14 @@ function updateHeaderStatus(status, error) {
         statusDot.classList.add('pulsing');
     }
 
+    if (status === 'pending_approval') {
+        text = "Needs Approval";
+        btnApproveDag.style.display = 'inline-flex'; // show the approve button
+        statusDot.style.background = '#00f2fe'; // custom cyan for waiting
+    } else {
+        btnApproveDag.style.display = 'none';
+    }
+
     // Special coloring for Paused state if it doesn't exist in root map
     if (status === 'paused') {
         statusDot.style.background = '#ffaa00'; // Amber
@@ -274,7 +310,7 @@ function updateHeaderStatus(status, error) {
         btnTogglePause.classList.remove('paused-state');
     }
 
-    if (status !== 'paused') {
+    if (status !== 'paused' && status !== 'pending_approval') {
         statusDot.style.background = `var(${colorVar})`;
     }
 
@@ -454,8 +490,11 @@ function updateDrawer(task, status, result) {
     }
 
     if (result) {
-        drawerResult.textContent = JSON.stringify(result, null, 2);
+        // Render as Markdown
+        drawerResult.classList.add('markdown-output');
+        drawerResult.innerHTML = marked.parse(typeof result === 'string' ? result : JSON.stringify(result, null, 2));
     } else if (isNowProcessing) {
+        drawerResult.classList.remove('markdown-output');
         if (isNewTask || drawerResult.textContent === "Awaiting execution...") {
             drawerResult.textContent = "Fetching live execution logs...\n";
         }
@@ -463,7 +502,7 @@ function updateDrawer(task, status, result) {
         if (!logPollInterval) {
             startLogPolling(task.id);
         }
-    } else {
+        drawerResult.classList.remove('markdown-output');
         drawerResult.textContent = "Awaiting execution...";
     }
 }

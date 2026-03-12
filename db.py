@@ -58,6 +58,21 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            cursor.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS agent_memory USING fts5(
+                    topic,
+                    content
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS agent_insights (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    topic TEXT NOT NULL,
+                    insight TEXT NOT NULL,
+                    source_thread_id TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
             conn.commit()
 
 def register_thread(thread_id: str, prompt: str):
@@ -237,3 +252,59 @@ def get_thread_info(thread_id: str) -> Optional[dict]:
             if row:
                 return {"prompt": row[0], "status": row[1], "priority": row[2]}
             return None
+
+def save_memory(topic: str, content: str):
+    """Saves a memory to the FTS5 agent_memory table."""
+    with _lock:
+        with sqlite3.connect(QUEUE_DB_PATH, timeout=15.0) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO agent_memory (topic, content) VALUES (?, ?)",
+                (topic, content)
+            )
+            conn.commit()
+
+def search_memory(query: str) -> list[dict]:
+    """Searches the agent memory using SQLite FTS5."""
+    with _lock:
+        with sqlite3.connect(QUEUE_DB_PATH, timeout=15.0) as conn:
+            cursor = conn.cursor()
+            
+            # Simple FTS syntax: match any word
+            words = [w for w in query.replace('"', '').split() if w.isalnum()]
+            if not words:
+                return []
+                
+            safe_query = " OR ".join(words)
+            try:
+                cursor.execute(
+                    "SELECT topic, content FROM agent_memory WHERE agent_memory MATCH ? ORDER BY rank LIMIT 3",
+                    (safe_query,)
+                )
+                rows = cursor.fetchall()
+                return [{"topic": r[0], "content": r[1]} for r in rows]
+            except sqlite3.OperationalError:
+                return []
+
+def save_insight(topic: str, insight: str, thread_id: str = None):
+    """Saves a learned insight to the agent_insights table."""
+    with _lock:
+        with sqlite3.connect(QUEUE_DB_PATH, timeout=15.0) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO agent_insights (topic, insight, source_thread_id) VALUES (?, ?, ?)",
+                (topic, insight, thread_id)
+            )
+            conn.commit()
+
+def get_recent_insights(limit: int = 5) -> list[dict]:
+    """Retrieves the most recent learned insights."""
+    with _lock:
+        with sqlite3.connect(QUEUE_DB_PATH, timeout=15.0) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT topic, insight, created_at FROM agent_insights ORDER BY created_at DESC LIMIT ?",
+                (limit,)
+            )
+            rows = cursor.fetchall()
+            return [{"topic": r[0], "insight": r[1], "created_at": r[2]} for r in rows]

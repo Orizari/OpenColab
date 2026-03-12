@@ -27,6 +27,10 @@
                 <form id="newJobForm">
                     <textarea id="promptInput" placeholder="Enter a complex prompt for the Orchestrator..."
                         required></textarea>
+                    <div style="margin-bottom: 15px;">
+                        <input type="file" id="imageInput" accept="image/*"
+                            style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(0, 0, 0, 0.2); color: var(--text-muted); cursor: pointer;" />
+                    </div>
                     <button type="submit" id="submitBtn">
                         <span class="btn-text">Launch Job</span>
                         <div class="spinner hidden"></div>
@@ -58,6 +62,9 @@
                 </div>
 
                 <div class="thread-controls" id="threadControls" style="display: none;">
+                    <button id="btnApproveDag" class="icon-btn" title="Approve and Dispatch DAG"
+                        style="display: none; background: #6dd5ed; color: #fff; border-color: transparent;">✅ Approve &
+                        Dispatch</button>
                     <button id="btnTogglePause" class="icon-btn" title="Pause/Resume Thread">⏸️ Pause</button>
                     <button id="btnRestart" class="icon-btn" title="Restart Thread (Clone)">🔄 Restart</button>
                     <div class="priority-selector">
@@ -143,6 +150,7 @@
     </template>
 
     <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="/static/app.js?v=2"></script>
 </body>
 

@@ -32,6 +32,7 @@ db.init_db()
 # Define our State
 class AgentState(TypedDict):
     original_request: str
+    file_paths: List[str]
     task_list: list[dict]
     completed_results: dict[str, str]
     status: str
@@ -48,8 +49,8 @@ class TaskListSchema(BaseModel):
 def planner_node(state: AgentState) -> dict:
     """
     Real LLM Node using LangChain and Ollama.
-    Step 1: Uses a ReAct agent with Web Search to research the request.
-    Step 2: Parses the research output into a structured DAG of tasks.
+    Directly parses the user request into a structured DAG of tasks.
+    Execution and research is delegated to the worker nodes.
     """
     print("--- PLANNER NODE ---")
     
@@ -68,53 +69,22 @@ def planner_node(state: AgentState) -> dict:
         temperature=0.1
     )
     
-    # --- Step 1: Research Agent ---
-    print("Running Research Phase...")
-    tools = [web_search_tool]
-    prompt_template = """You are an Orchestrator Planner. Before generating a plan, research the user's request.
-Your objective is to find any necessary context (like package names, endpoints, or facts) needed to build a plan.
+    # Retrieve recent insights to improve planning
+    recent_insights = db.get_recent_insights(5)
+    insights_context = ""
+    if recent_insights:
+        insights_context = "\n\n--- Lessons Learned from Previous Tasks ---\n"
+        for ins in recent_insights:
+            insights_context += f"- [{ins['topic']}]: {ins['insight']}\n"
 
-You have access to the following tools:
-
-{tools}
-
-Use the following format:
-Thought: Do I need to use a tool? Yes
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-
-When you have found enough context, or if you don't need a tool, output your final findings:
-Thought: Do I need to use a tool? No
-Final Answer: [Detailed context and proposed approach to solve the user's request]
-
-User Request: {input}
-Thought:{agent_scratchpad}"""
-
-    prompt = PromptTemplate.from_template(prompt_template)
-    agent = create_react_agent(llm, tools, prompt)
-    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True, max_iterations=3)
-    
-    try:
-        research_response = agent_executor.invoke({"input": req})
-        research_context = research_response.get("output", "No context found.")
-    except Exception as e:
-        print(f"Research failed: {e}")
-        research_context = "Research failed. Proceeding with original request."
-
-    print(f"Research Context:\n{research_context}")
-    
-    # --- Step 2: Structured Parsing ---
-    print("Running Structured Parsing Phase...")
-    structured_llm = llm.with_structured_output(TaskListSchema)
-    
     parse_prompt = f"""You are an advanced AI Orchestrator Planner.
-Your job is to break down the user prompt into a logical sequence of sub-tasks, GIVEN the research context.
+Your job is to break down the user prompt into a logical sequence of sub-tasks.
 The tasks must form a Directed Acyclic Graph (DAG) using dependencies. 
 If a task requires the output of another task, list the other task's ID in its 'dependencies'.
 
+CRITICAL INSTRUCTION: You do not have access to tools. If the user asks to analyze code or search the web, CREATE A TASK for the worker to do that (e.g. 'Read the README file', 'Search the web for X'). Do not output final answers here, only output the task plan.
+{insights_context}
 User Prompt: {req}
-Research Context: {research_context}
 
 Ensure you output the required JSON structure strictly.
 """
@@ -149,8 +119,51 @@ Ensure you output the required JSON structure strictly.
     return {
         "task_list": tasks,
         "completed_results": {},
-        "status": "dispatching"
+        "status": "pending_approval"
     }
+
+def reflection_node(state: AgentState) -> dict:
+    """
+    Analyzes the completed results and extracts 'lessons learned' to save as insights.
+    This enables the system to improve its intelligence over time.
+    """
+    print("--- REFLECTION NODE ---")
+    completed_results = state.get("completed_results", {})
+    original_request = state.get("original_request", "")
+    
+    if not completed_results:
+        return {"status": "finished"}
+
+    llm = ChatOllama(
+        base_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+        model="qwen3.5:9b",
+        temperature=0.1
+    )
+    
+    reflection_prompt = f"""You are a meta-cognitive AI analyst. 
+Review the original request and the completed results of a workflow.
+Identify one key 'lesson learned' or 'best practice' that could help improve future task planning or execution.
+Format your response as a JSON object with 'topic' and 'insight' fields.
+
+Original Request: {original_request}
+Results: {json.dumps(completed_results, indent=2)}
+"""
+    try:
+        # We use a simple structure for insights
+        class InsightSchema(BaseModel):
+            topic: str = Field(description="A short category for the insight")
+            insight: str = Field(description="A concise description of the lesson learned")
+
+        structured_llm = llm.with_structured_output(InsightSchema)
+        reflection_result = structured_llm.invoke(reflection_prompt)
+        
+        db.save_insight(reflection_result.topic, reflection_result.insight)
+        print(f"Reflection saved insight: {reflection_result.topic}")
+        
+    except Exception as e:
+        print(f"Error during reflection: {e}")
+
+    return {"status": "finished"}
 
 def dispatcher_node(state: AgentState, config: RunnableConfig) -> dict:
     """
@@ -180,17 +193,24 @@ def dispatcher_node(state: AgentState, config: RunnableConfig) -> dict:
                     for dep in t["dependencies"]:
                         dependency_context += f"Result of {dep}:\\n{completed_results[dep]}\\n\\n"
                 
-                # Push to queue
-                db.push_task(t["id"], thread_id, {
+                payload_data = {
                     "description": t["description"] + dependency_context
-                })
+                }
+                
+                # Forward all attached files to workers
+                file_paths = state.get("file_paths", [])
+                if file_paths:
+                    payload_data["file_paths"] = file_paths
+
+                # Push to queue
+                db.push_task(t["id"], thread_id, payload_data)
                 # Update status
                 t["status"] = "dispatched"
                 dispatched_any = True
         new_task_list.append(t)
                 
     if not dispatched_any and all(t["status"] == "completed" for t in task_list):
-        return {"status": "finished"}
+        return {"status": "reflecting"}
 
     return {
         "task_list": new_task_list,
@@ -229,21 +249,21 @@ def aggregator_node(state: AgentState) -> dict:
 def decide_next(state: AgentState) -> str:
     """
     Edge logic: 
-    - If status == "sleeping", graph pauses (returns END but checkpointer saves state).
-      Actually, the correct way to pause in LangGraph is to simply reach END, or wait for human-in-the-loop.
-      Since we want external webhook to resume, going to END is fine if we use `thread_id` to resume.
-      Wait, if we go to '__end__', LangGraph finishes. To suspend, LangGraph has `interrupt()` or we can just pause.
-      Let's use `__end__`. A webhook call will just resume the graph from `aggregator_node` using `StateGraph` and updating state.
+    - If status == "sleeping" or "pending_approval", graph pauses (returns END).
     """
     status = state.get("status")
     if status == "finished":
         return END
     elif status == "sleeping":
         return END
+    elif status == "pending_approval":
+        return END
     elif status == "dispatching":
         return "dispatcher_node"
     elif status == "aggregating":
         return "aggregator_node"
+    elif status == "reflecting":
+        return "reflection_node"
     return END
 
 # Build Graph
@@ -252,6 +272,7 @@ builder = StateGraph(AgentState)
 builder.add_node("planner_node", planner_node)
 builder.add_node("dispatcher_node", dispatcher_node)
 builder.add_node("aggregator_node", aggregator_node)
+builder.add_node("reflection_node", reflection_node)
 
 def route_start(state: AgentState) -> str:
     status = state.get("status", "planning")
@@ -265,6 +286,7 @@ builder.add_conditional_edges(START, route_start)
 builder.add_edge("planner_node", "dispatcher_node")
 builder.add_conditional_edges("dispatcher_node", decide_next)
 builder.add_edge("aggregator_node", "dispatcher_node")
+builder.add_edge("reflection_node", END)
 
 
 # Checkpointer

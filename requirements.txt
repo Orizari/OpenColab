@@ -8,3 +8,5 @@ langchain-ollama
 langchain-experimental
 beautifulsoup4
 requests
+docker
+python-multipart

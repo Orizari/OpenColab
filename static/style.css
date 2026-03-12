@@ -535,6 +535,7 @@ button:active {
     line-height: 1.4;
     display: -webkit-box;
     -webkit-line-clamp: 3;
+    line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
@@ -667,4 +668,97 @@ button:active {
     color: var(--accent-secondary);
     white-space: pre-wrap;
     word-break: break-all;
-}
+
+    /* --- Markdown Styles --- */
+    #drawerResult.markdown-output {
+        white-space: normal;
+        word-break: normal;
+        color: var(--text-main);
+    }
+
+    #drawerResult.markdown-output h1,
+    #drawerResult.markdown-output h2,
+    #drawerResult.markdown-output h3 {
+        margin-top: 1.5rem;
+        margin-bottom: 0.8rem;
+        color: var(--accent-secondary);
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 4px;
+    }
+
+    #drawerResult.markdown-output h1 {
+        font-size: 1.4rem;
+    }
+
+    #drawerResult.markdown-output h2 {
+        font-size: 1.2rem;
+    }
+
+    #drawerResult.markdown-output h3 {
+        font-size: 1rem;
+    }
+
+    #drawerResult.markdown-output p {
+        margin-bottom: 1rem;
+    }
+
+    #drawerResult.markdown-output ul,
+    #drawerResult.markdown-output ol {
+        margin-bottom: 1rem;
+        padding-left: 1.5rem;
+    }
+
+    #drawerResult.markdown-output li {
+        margin-bottom: 0.5rem;
+    }
+
+    #drawerResult.markdown-output code {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 0.9em;
+        color: #6dd5ed;
+    }
+
+    #drawerResult.markdown-output pre {
+        background: #0d1117;
+        padding: 1rem;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        overflow-x: auto;
+        margin-bottom: 1rem;
+    }
+
+    #drawerResult.markdown-output pre code {
+        background: transparent;
+        padding: 0;
+        color: #f0f0f5;
+    }
+
+    #drawerResult.markdown-output table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 1rem;
+        font-size: 0.85rem;
+    }
+
+    #drawerResult.markdown-output th,
+    #drawerResult.markdown-output td {
+        border: 1px solid var(--border-color);
+        padding: 8px 12px;
+        text-align: left;
+    }
+
+    #drawerResult.markdown-output th {
+        background: rgba(255, 255, 255, 0.05);
+        font-weight: 600;
+    }
+
+    #drawerResult.markdown-output blockquote {
+        border-left: 4px solid var(--accent-primary);
+        padding-left: 1rem;
+        margin: 1rem 0;
+        color: var(--text-muted);
+        font-style: italic;
+    }
