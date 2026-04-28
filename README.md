@@ -64,3 +64,21 @@ curl -X POST http://localhost:8000/submit \
 - The FastAPI server wakes up via the webhook, processes the result for Task 1, and subsequently dispatches Tasks 2 and 3 concurrently.
 - The mock worker sequentially polls and processes Tasks 2 and 3.
 - The workflow finishes gracefully.
+
+## Troubleshooting
+
+### Port Already in Use (`Errno 48`)
+If you encounter an error like `ERROR: [Errno 48] Address already in use` when starting the server, it means a previous instance of `uvicorn` is still running in the background.
+
+To fix this:
+1. **Find the Process ID (PID)** using the port (default is 8000):
+   ```bash
+   lsof -i :8000
+   ```
+2. **Kill the process** (replace `<PID>` with the actual number from the `PID` column):
+   ```bash
+   kill -9 <PID>
+   ```
+
+### Stopping Processes
+To stop the `mock_worker.py` or the `uvicorn` server, simply press `Ctrl + C` in the terminal where they are running. If they are unresponsive, use the `kill` method described above.

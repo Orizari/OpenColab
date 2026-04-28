@@ -4,154 +4,271 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenColab Mission Control</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=2">
+    <title>Mission Control | OpenColab</title>
+    <meta name="description" content="OpenColab Mission Control — AI Orchestration Dashboard">
+    <link rel="stylesheet" href="/static/style.css?v=5">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 
 <body>
-    <div class="app-container">
-
-        <!-- Sidebar: Thread History -->
-        <aside class="sidebar" id="sidebar">
-            <div class="resize-handle" id="sidebarResizer"></div>
-            <div class="sidebar-header">
-                <div class="logo">
-                    <span class="logo-icon"></span>
-                    <h1>OpenColab</h1>
-                </div>
-                <p class="subtitle">Mission Control</p>
-            </div>
-
-            <div class="new-job-section">
-                <form id="newJobForm">
-                    <textarea id="promptInput" placeholder="Enter a complex prompt for the Orchestrator..."
-                        required></textarea>
-                    <div style="margin-bottom: 15px;">
-                        <input type="file" id="imageInput" accept="image/*"
-                            style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(0, 0, 0, 0.2); color: var(--text-muted); cursor: pointer;" />
-                    </div>
-                    <button type="submit" id="submitBtn">
-                        <span class="btn-text">Launch Job</span>
-                        <div class="spinner hidden"></div>
-                    </button>
-                </form>
-            </div>
-
-            <div class="history-section">
-                <h3>Recent Threads</h3>
-                <ul id="threadList" class="thread-list">
-                    <!-- Threads populated by JS -->
-                </ul>
-            </div>
-        </aside>
-
-        <!-- Main Workspace: DAG Visualization -->
-        <main class="workspace">
-            <div class="global-telemetry">
-                <div class="telemetry-item">
-                    <span class="telemetry-label">Active Workers</span>
-                    <span class="telemetry-value" id="activeWorkersCount">0</span>
-                </div>
-            </div>
-
-            <header class="workspace-header">
-                <div class="status-indicator">
-                    <div id="statusDot" class="dot"></div>
-                    <h2 id="currentStatusText">Idle</h2>
-                </div>
-
-                <div class="thread-controls" id="threadControls" style="display: none;">
-                    <button id="btnApproveDag" class="icon-btn" title="Approve and Dispatch DAG"
-                        style="display: none; background: #6dd5ed; color: #fff; border-color: transparent;">✅ Approve &
-                        Dispatch</button>
-                    <button id="btnTogglePause" class="icon-btn" title="Pause/Resume Thread">⏸️ Pause</button>
-                    <button id="btnRestart" class="icon-btn" title="Restart Thread (Clone)">🔄 Restart</button>
-                    <div class="priority-selector">
-                        <label for="prioritySelect">Priority:</label>
-                        <select id="prioritySelect">
-                            <option value="10">High (10)</option>
-                            <option value="0" selected>Normal (0)</option>
-                            <option value="-10">Low (-10)</option>
-                        </select>
+    <div class="main-wrapper">
+        <div class="content-top">
+            <!-- Sidebar: Job Launch & History -->
+            <aside class="sidebar" id="sidebar">
+                <div class="sidebar-header">
+                    <div class="logo">
+                        <div class="logo-orb"></div>
+                        <div>
+                            <h1>OpenColab</h1>
+                            <p class="logo-subtitle">Mission Control</p>
+                        </div>
                     </div>
                 </div>
 
-                <div class="thread-id-display">
-                    ID: <span id="currentThreadId">None Selected</span>
-                </div>
-            </header>
+                <div class="sidebar-content">
+                    <form id="newJobForm">
+                        <textarea id="promptInput" placeholder="What should we build today?" required></textarea>
+                        <div class="file-upload-area">
+                            <label class="file-label">Attach Files / Folders</label>
+                            <input type="file" id="imageInput" multiple webkitdirectory directory>
+                        </div>
+                        <button type="submit" id="btnLaunch">
+                            <span class="spinner" style="display: none;"></span>
+                            <span class="btn-text">🚀 Launch Job</span>
+                        </button>
+                    </form>
 
-            <div class="graph-container" id="graphContainer">
-                <!-- Nodes container -->
-                <div id="nodesContainer" class="nodes-container">
-                    <!-- SVG Canvas for drawing dependency lines -->
-                    <svg id="svgCanvas" class="svg-canvas"></svg>
-
-                    <!-- Nodes populated by JS -->
-                    <div class="empty-state" id="emptyState">
-                        <div class="empty-icon">☄️</div>
-                        <p>No active thread selected. Launch a new job to view the live dependency graph.</p>
+                    <div class="history-section">
+                        <h3>Recent Jobs</h3>
+                        <ul class="thread-list" id="threadList">
+                            <!-- Polled history items -->
+                        </ul>
                     </div>
                 </div>
-            </div>
 
-            <!-- Task Detail Drawer -->
+                <!-- Resize handle -->
+                <div class="resize-handle" id="sidebarResizer"></div>
+            </aside>
+
+            <!-- Main Workspace -->
+            <main class="workspace">
+                <!-- Top Bar -->
+                <div class="global-telemetry">
+                    <div class="telemetry-item" style="margin-right: auto; cursor: pointer; border: 1px solid var(--accent-primary-glow); border-radius: 20px; transition: all 0.2s;" id="btnViewImprovements">
+                        <span class="telemetry-icon">💡</span>
+                        <span class="telemetry-label" style="color: var(--accent-secondary); margin-left: 5px;">Improvements</span>
+                    </div>
+                    <div class="telemetry-item">
+                        <div class="telemetry-indicator-btn" id="btnViewWorkers">
+                            <span class="telemetry-label">Workers</span>
+                            <span class="telemetry-value" id="activeWorkersCount">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Header -->
+                <header class="workspace-header">
+                    <div class="status-indicator">
+                        <div class="dot" id="statusDot"></div>
+                        <div>
+                            <h2 id="currentStatusText">Idle</h2>
+                            <span class="thread-id-display" id="currentThreadId">Select a job to begin</span>
+                        </div>
+                    </div>
+
+                    <!-- Pipeline Progress -->
+                    <div class="pipeline-progress" id="pipelineProgress" style="display: none;">
+                        <div class="pipeline-step" data-step="planning">
+                            <div class="step-dot"></div>
+                            <span>Plan</span>
+                        </div>
+                        <div class="pipeline-connector"></div>
+                        <div class="pipeline-step" data-step="dispatching">
+                            <div class="step-dot"></div>
+                            <span>Dispatch</span>
+                        </div>
+                        <div class="pipeline-connector"></div>
+                        <div class="pipeline-step" data-step="processing">
+                            <div class="step-dot"></div>
+                            <span>Execute</span>
+                        </div>
+                        <div class="pipeline-connector"></div>
+                        <div class="pipeline-step" data-step="aggregating">
+                            <div class="step-dot"></div>
+                            <span>Synthesize</span>
+                        </div>
+                        <div class="pipeline-connector"></div>
+                        <div class="pipeline-step" data-step="evolving">
+                            <div class="step-dot"></div>
+                            <span>Evolve</span>
+                        </div>
+                        <div class="pipeline-connector"></div>
+                        <div class="pipeline-step" data-step="finished">
+                            <div class="step-dot"></div>
+                            <span>Done</span>
+                        </div>
+                    </div>
+
+                    <div class="thread-controls" id="threadControls" style="display: none;">
+                        <div class="priority-selector">
+                            <label>Priority</label>
+                            <select id="prioritySelect">
+                                <option value="0">Normal</option>
+                                <option value="5">High</option>
+                                <option value="10">Urgent</option>
+                            </select>
+                        </div>
+                        <button id="btnApproveDag" class="icon-btn approve-btn" style="display: none;">✅ Approve & Dispatch</button>
+                        <button id="btnTogglePause" class="icon-btn">⏸️ Pause</button>
+                        <button id="btnRestart" class="icon-btn">🔄 Restart</button>
+                    </div>
+                </header>
+
+                <!-- Main Content Area -->
+                <div class="graph-container">
+                    <div id="emptyState" class="empty-state">
+                        <div class="empty-icon">🛸</div>
+                        <h2>No Job Selected</h2>
+                        <p>Launch a new job or select one from the sidebar to view progress.</p>
+                    </div>
+
+                    <!-- Final Answer Panel (shown when job completes) -->
+                    <div id="finalAnswerPanel" class="final-answer-panel" style="display: none;">
+                        <div class="final-answer-header">
+                            <span class="final-answer-icon">✨</span>
+                            <h3>Final Result</h3>
+                            <button id="copyResultBtn" class="icon-btn copy-btn" title="Copy to clipboard">📋 Copy</button>
+                        </div>
+                        <div class="final-answer-body" id="finalAnswerBody">
+                            <!-- Rendered markdown result -->
+                        </div>
+                    </div>
+
+                    <!-- DAG Visualization -->
+                    <div id="nodesContainer" class="nodes-container">
+                        <!-- SVG backdrop for lines -->
+                        <svg id="svgCanvas" class="svg-canvas"></svg>
+                        <!-- Nodes injected here -->
+                    </div>
+                </div>
+            </main>
+
+            <!-- Task Info Drawer (Right Side) -->
             <div class="task-drawer" id="taskDrawer">
                 <div class="drawer-header">
-                    <h3>Task Details</h3>
+                    <h2 style="font-size: 1.1rem;">Task Details</h2>
                     <button id="closeDrawerBtn" class="close-btn">&times;</button>
                 </div>
                 <div class="drawer-content">
                     <div class="drawer-field">
-                        <label>Task ID</label>
-                        <div id="drawerTaskId" class="font-mono">...</div>
+                        <label>ID / Status</label>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <p class="font-mono" id="drawerTaskId"></p>
+                            <span id="drawerStatusBadge" class="node-badge"></span>
+                        </div>
                     </div>
                     <div class="drawer-field">
-                        <label>Status</label>
-                        <div id="drawerStatusBadge" class="node-badge">...</div>
+                        <label>Assigned Worker / Attempts</label>
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <p id="drawerWorkerId" class="text-muted"></p>
+                            <span id="drawerAttempts" class="attempts-badge" style="display:none;"></span>
+                        </div>
                     </div>
                     <div class="drawer-field">
-                        <label>Assigned Worker</label>
-                        <div id="drawerWorkerId" class="font-mono text-muted">None</div>
+                        <label>Objective</label>
+                        <p id="drawerDescription"></p>
                     </div>
-                    <div class="drawer-field">
-                        <label>Description</label>
-                        <p id="drawerDescription">...</p>
-                    </div>
-                    <div class="drawer-field">
-                        <label>Live Execution Logs / Final Output</label>
+                    <div class="drawer-field" style="flex-grow: 1; display: flex; flex-direction: column;">
+                        <label>Task Results</label>
                         <div class="terminal-container" id="terminalContainer">
-                            <pre id="drawerResult" class="code-block logs-text">Awaiting execution...</pre>
+                            <pre class="logs-text" id="drawerResult">Select a task on the graph to view results.</pre>
                         </div>
                     </div>
                 </div>
             </div>
-        </main>
+        </div>
+
+        <!-- Bottom Log Panel -->
+        <div class="log-panel" id="logPanel">
+            <div class="log-header" id="logHeader">
+                <div class="log-tabs">
+                    <div class="log-tab active" data-tab="output">Output</div>
+                    <div class="log-tab" data-tab="terminal">Terminal</div>
+                </div>
+                <div class="log-controls">
+                    <button class="log-control-btn" id="clearLogsBtn">🚫</button>
+                    <button class="log-control-btn" id="toggleLogPanelBtn">⌄</button>
+                </div>
+            </div>
+            <div class="log-body" id="logBody">
+                <div class="log-entry">
+                    <span class="log-time">System</span>
+                    <span class="log-tag">[READY]</span>
+                    <span class="log-msg">Mission Control initialized. Waiting for task...</span>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- UI Templates -->
+    <!-- Modals -->
+    <div class="modal-overlay" id="improvementsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.5rem;">💡</span>
+                    <div>
+                        <h2 style="margin: 0; font-size: 1.25rem;">System Improvements</h2>
+                        <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted);">Long-term optimized behaviors</p>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button id="btnClearImprovements" class="icon-btn" style="color: var(--status-error); border-color: rgba(255,100,100,0.3);" title="Clear all improvements">🗑️ Clear All</button>
+                    <button class="close-btn" id="closeImprovementsBtn">&times;</button>
+                </div>
+            </div>
+            <div class="modal-body" id="improvementsList">
+                <div class="loading-state">Fetching improvement ledger...</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="workersModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.5rem;">⚙️</span>
+                    <div>
+                        <h2 style="margin: 0; font-size: 1.25rem;">Active Workers</h2>
+                        <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted);">Real-time Fleet Status</p>
+                    </div>
+                </div>
+                <button class="close-btn" id="closeWorkersBtn">&times;</button>
+            </div>
+            <div class="modal-body" id="workersList">
+                <div class="loading-state">Scanning for heartbeat signals...</div>
+            </div>
+        </div>
+    </div>
+
     <template id="nodeTemplate">
-        <div class="dag-node text-center" data-id="">
+        <div class="dag-node">
             <div class="node-header">
                 <span class="node-id"></span>
                 <span class="node-badge"></span>
             </div>
             <div class="node-body"></div>
-            <div class="node-indicators"
-                style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
-                <span
-                    style="font-size: 0.65rem; color: var(--text-muted); opacity: 0.6; text-transform: uppercase; letter-spacing: 0.5px;">Click
-                    for output ➔</span>
-                <span class="node-worker"
-                    style="font-size: 0.75rem; color: var(--accent-secondary); font-family: monospace; font-weight: bold; background: rgba(0, 242, 254, 0.1); padding: 2px 6px; border-radius: 4px;"></span>
+            <div class="node-indicators">
+                <span class="node-hint">Click for details ➔</span>
+                <span class="node-worker"></span>
+                <span class="node-attempts"></span>
             </div>
+            <button class="node-restart-btn" title="Restart this task">🔄</button>
+        </div>
         </div>
     </template>
 
-    <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="/static/app.js?v=2"></script>
+    <script src="/static/app.js?v=5"></script>
 </body>
 
 </html>

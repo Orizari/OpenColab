@@ -9,3 +9,7 @@ logs/
 .DS_Store
 project-001/
 workspace/
+scratch/
+app/
+todo.md
+file_path
