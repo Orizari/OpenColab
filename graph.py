@@ -408,7 +408,7 @@ def aggregator_node(state: AgentState, config: RunnableConfig) -> dict:
                     )
                     db.push_task(agg_task_id, thread_id, {"description": instruction})
 
-    return {"task_list": task_list, "completed_results": {**completed_results, **new_completed}, "status": "sleeping"}
+    return {"task_list": task_list, "completed_results": {**completed_results, **new_completed}, "status": "awaiting_aggregation"}
 
 def verification_node(state: AgentState, config: RunnableConfig) -> dict:
     print("--- VERIFICATION NODE ---")
@@ -426,7 +426,7 @@ def verification_node(state: AgentState, config: RunnableConfig) -> dict:
 def decide_next(state: AgentState) -> str:
     status = state.get("status")
     if status == "finished": return END
-    if status in ["sleeping", "pending_approval", "awaiting_reflection", "awaiting_evolution"]: return END
+    if status in ["sleeping", "pending_approval", "awaiting_reflection", "awaiting_evolution", "awaiting_aggregation"]: return END
     if status == "critiquing": return "critique_node"
     if status == "dispatching": return "dispatcher_node"
     if status == "aggregating": return "aggregator_node"
@@ -446,7 +446,7 @@ builder.add_node("verification_node", verification_node)
 
 def route_start(state: AgentState) -> str:
     status = state.get("status", "planning")
-    if status == "aggregating": return "aggregator_node"
+    if status in ["aggregating", "awaiting_aggregation"]: return "aggregator_node"
     if status == "dispatching": return "dispatcher_node"
     if status == "critiquing": return "critique_node"
     if status == "verifying": return "verification_node"
