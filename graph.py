@@ -401,12 +401,17 @@ def aggregator_node(state: AgentState, config: RunnableConfig) -> dict:
 
     return {"task_list": task_list, "completed_results": {**completed_results, **new_completed}, "status": "sleeping"}
 
-def verification_node(state: AgentState) -> dict:
+def verification_node(state: AgentState, config: RunnableConfig) -> dict:
     print("--- VERIFICATION NODE ---")
-    import subprocess
+    thread_id = config["configurable"]["thread_id"]
     try:
-        subprocess.run([sys.executable, "vitals_check.py"], capture_output=True)
-    except: pass
+        proc = subprocess.run([sys.executable, "vitals_check.py"], capture_output=True, text=True)
+        if proc.returncode == 0:
+            db.push_log("System", thread_id, "✅ System Vitals: HEALTHY")
+        else:
+            db.push_log("System", thread_id, f"⚠️ System Vitals: UNHEALTHY\n{proc.stdout}")
+    except Exception as e:
+        db.push_log("System", thread_id, f"⚠️ Verification Error: {e}")
     return {"status": "dispatching"}
 
 def decide_next(state: AgentState) -> str:

@@ -20,6 +20,7 @@ app = FastAPI(title="OpenColab Orchestrator", version="0.1.0")
 
 # Locks to prevent concurrent graph.invoke calls on the same thread
 thread_locks = defaultdict(threading.Lock)
+git_lock = threading.Lock()
 
 app.add_middleware(
     CORSMiddleware,
@@ -224,6 +225,37 @@ async def webhook_result(req: WebhookRequest, background_tasks: BackgroundTasks)
                 print(f"Error resuming graph for thread {req.thread_id}: {e}")
 
     background_tasks.add_task(resume_graph)
+    
+    # Autonomous Version Control for Improvements
+    if req.task_id.startswith("APPLY_TASK_") and not req.result.startswith("Error:"):
+        def autonomous_commit():
+            with git_lock:
+                print(f"🚀 Improvement {req.task_id} applied. Committing to GitHub...")
+                try:
+                    imp_id = req.task_id.replace("APPLY_TASK_", "")
+                    imp = db.get_improvement(int(imp_id))
+                    raw_desc = imp['description'] if imp else "Unknown improvement"
+                    clean_desc = "".join(c for c in raw_desc[:80] if c.isalnum() or c in " -_.").strip()
+                    
+                    # 1. Check if there are actual changes
+                    status_proc = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
+                    if not status_proc.stdout.strip():
+                        print(f"ℹ️ No changes detected for improvement {req.task_id}. Skipping commit.")
+                        db.push_log(req.task_id, req.thread_id, "ℹ️ No file changes detected. System state remains synchronized.")
+                        return
+
+                    # 2. Stage, Commit and Push
+                    subprocess.run(["git", "add", "."], check=True)
+                    subprocess.run(["git", "commit", "-m", f"Autonomous Upgrade: {clean_desc}"], check=True)
+                    subprocess.run(["git", "push", "origin", "main"], check=True)
+                    print(f"✅ Changes for {req.task_id} committed and pushed.")
+                    db.push_log(req.task_id, req.thread_id, "✅ Changes committed and pushed to GitHub.")
+                except Exception as e:
+                    print(f"❌ Failed to commit autonomous changes: {e}")
+                    db.push_log(req.task_id, req.thread_id, f"⚠️ Failed to push to GitHub: {e}")
+
+        background_tasks.add_task(autonomous_commit)
+
     return {"status": "success", "message": "Result processed and graph resumed."}
 
 @app.get("/api/threads")
