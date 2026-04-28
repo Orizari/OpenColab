@@ -35,6 +35,10 @@ button:active{transform:translateY(1px)}
 .thread-item{padding:10px 12px;background:var(--panel-bg);border:1px solid transparent;border-radius:6px;margin-bottom:6px;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:8px}
 .thread-item:hover{background:rgba(50,50,60,0.5);border-color:var(--border-color)}
 .thread-item.active{border-color:var(--accent-primary);background:rgba(107,76,255,0.1)}
+.thread-item-system{background:rgba(107,76,255,0.08);border-color:rgba(107,76,255,0.25)}
+.thread-item-system:hover{background:rgba(107,76,255,0.15);border-color:var(--accent-primary)}
+.thread-item-system.active{background:rgba(107,76,255,0.2);border-color:var(--accent-primary);box-shadow:0 0 10px rgba(107,76,255,0.1)}
+.thread-item-system .thread-item-prompt::before{content:"⚙️ ";margin-right:4px;filter:drop-shadow(0 0 2px var(--accent-primary-glow))}
 .thread-item-main{flex-grow:1;min-width:0}
 .thread-item-prompt{font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
 .thread-item-time{font-size:0.7rem;color:var(--text-muted)}

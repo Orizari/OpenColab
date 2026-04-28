@@ -203,7 +203,8 @@ async function fetchThreads() {
         threadList.innerHTML = '';
         threads.forEach(t => {
             const li = document.createElement('li');
-            li.className = `thread-item ${t.thread_id === activeThreadId ? 'active' : ''}`;
+            const isSystem = t.thread_id.startsWith('SYSTEM_EVO_') || t.prompt.startsWith('APPLY IMPROVEMENT:');
+            li.className = `thread-item ${t.thread_id === activeThreadId ? 'active' : ''} ${isSystem ? 'thread-item-system' : ''}`;
             const date = new Date(t.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
             li.innerHTML = `
                 <div class="thread-item-main" onclick="selectThread('${t.thread_id}')">
