@@ -271,6 +271,10 @@ def reflection_node(state: AgentState, config: RunnableConfig) -> dict:
     prompt_tpl = db.get_system_prompt("REFLECTION_PROMPT", REFLECTION_PROMPT)
     instruction = prompt_tpl.format(results=json.dumps(user_results, indent=2)) + source_ctx
     
+    # Avoid re-pushing if already waiting
+    if state.get("status") == "awaiting_reflection":
+        return {"status": "awaiting_reflection"}
+
     db.push_task(ref_task_id, thread_id, {"description": instruction})
     return {"status": "awaiting_reflection"}
 
@@ -303,6 +307,10 @@ def evolution_node(state: AgentState, config: RunnableConfig) -> dict:
     prompt_tpl = db.get_system_prompt("EVOLUTION_PROMPT", EVOLUTION_PROMPT)
     instruction = prompt_tpl.format(context=agg_ctx, source_code=core_ctx)
     
+    # Avoid re-pushing if already waiting
+    if state.get("status") == "awaiting_evolution":
+        return {"status": "awaiting_evolution"}
+
     db.push_task(evo_task_id, thread_id, {"description": instruction})
     return {"status": "awaiting_evolution"}
 
