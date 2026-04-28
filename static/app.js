@@ -631,7 +631,7 @@ async function applyImprovement(id) {
             addLogEntry('System', 'APPLY', `Improvement application started in thread ${data.thread_id}`);
             improvementsModal.classList.remove('active');
             // Navigate to the new thread to watch progress
-            loadThread(data.thread_id);
+            selectThread(data.thread_id);
         } else {
             alert("Failed to start application.");
         }
