@@ -272,7 +272,7 @@ def reflection_node(state: AgentState, config: RunnableConfig) -> dict:
     instruction = prompt_tpl.format(results=json.dumps(user_results, indent=2)) + source_ctx
     
     db.push_task(ref_task_id, thread_id, {"description": instruction})
-    return {"status": "sleeping"}
+    return {"status": "awaiting_reflection"}
 
 def evolution_node(state: AgentState, config: RunnableConfig) -> dict:
     """
@@ -304,7 +304,7 @@ def evolution_node(state: AgentState, config: RunnableConfig) -> dict:
     instruction = prompt_tpl.format(context=agg_ctx, source_code=core_ctx)
     
     db.push_task(evo_task_id, thread_id, {"description": instruction})
-    return {"status": "sleeping"}
+    return {"status": "awaiting_evolution"}
 
 def dispatcher_node(state: AgentState, config: RunnableConfig) -> dict:
     """
@@ -418,7 +418,7 @@ def verification_node(state: AgentState, config: RunnableConfig) -> dict:
 def decide_next(state: AgentState) -> str:
     status = state.get("status")
     if status == "finished": return END
-    if status in ["sleeping", "pending_approval"]: return END
+    if status in ["sleeping", "pending_approval", "awaiting_reflection", "awaiting_evolution"]: return END
     if status == "critiquing": return "critique_node"
     if status == "dispatching": return "dispatcher_node"
     if status == "aggregating": return "aggregator_node"
@@ -442,6 +442,8 @@ def route_start(state: AgentState) -> str:
     if status == "dispatching": return "dispatcher_node"
     if status == "critiquing": return "critique_node"
     if status == "verifying": return "verification_node"
+    if status in ["reflecting", "awaiting_reflection"]: return "reflection_node"
+    if status in ["evolving", "awaiting_evolution"]: return "evolution_node"
     return "planner_node"
 
 builder.add_conditional_edges(START, route_start)

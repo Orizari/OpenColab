@@ -307,8 +307,8 @@ function updatePipeline(status, taskList) {
         'planning': 'planning', 'pending_approval': 'planning',
         'dispatching': 'dispatching', 'dispatched': 'dispatching',
         'processing': 'processing', 'sleeping': 'processing',
-        'aggregating': 'aggregating', 'reflecting': 'aggregating',
-        'evolving': 'evolving',
+        'aggregating': 'aggregating', 'reflecting': 'aggregating', 'awaiting_reflection': 'aggregating',
+        'evolving': 'evolving', 'awaiting_evolution': 'evolving',
         'finished': 'finished', 'completed': 'finished'
     };
     const currentStage = stageMap[status] || 'planning';
