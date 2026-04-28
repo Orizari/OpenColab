@@ -213,13 +213,21 @@ async def webhook_result(req: WebhookRequest, background_tasks: BackgroundTasks)
                     next_status = "critiquing"
                 elif req.task_id.startswith("SYSTEM_REFLECTION"):
                     next_status = "reflecting"
+                elif req.task_id.startswith("SYSTEM_EVOLUTION"):
+                    next_status = "evolving"
                 
                 new_state = {
                     "completed_results": completed_results,
                     "status": next_status
                 }
                 
-                graph.invoke(new_state, config)
+                res = graph.invoke(new_state, config)
+                
+                # If the resulting state is finished, mark thread as completed
+                if res and res.get("status") == "finished":
+                    db.set_thread_status(req.thread_id, 'completed')
+                    print(f"✅ Thread {req.thread_id} marked as COMPLETED.")
+                
                 print(f"Graph execution resumed and settled for thread {req.thread_id} with status {next_status}")
             except Exception as e:
                 print(f"Error resuming graph for thread {req.thread_id}: {e}")
