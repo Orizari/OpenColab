@@ -487,6 +487,19 @@ FORMAT: You MUST use the tags above to perform the changes."""
 
     db.push_task(task_id, thread_id, {"description": prompt})
     db.apply_improvement(item_id)
+    
+    # Initialize graph state for this system thread so UI can poll it
+    initial_state = {
+        "original_request": f"Apply Improvement: {imp['description']}",
+        "file_paths": [],
+        "status": "processing",
+        "task_list": [{"id": task_id, "description": f"Apply {imp['description'][:100]}", "status": "dispatched", "dependencies": []}],
+        "completed_results": {},
+        "critiques": {},
+        "error": None
+    }
+    graph.update_state({"configurable": {"thread_id": thread_id}}, initial_state)
+    
     return {"status": "success", "thread_id": thread_id}
 
 @app.get("/api/improvements/all")
