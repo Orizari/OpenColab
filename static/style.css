@@ -137,6 +137,8 @@ button:active{transform:translateY(1px)}
 .node-processing .node-badge{background:var(--accent-primary);color:white}
 .node-completed{background:var(--node-completed);border-color:var(--status-completed)}
 .node-completed .node-badge{background:rgba(10,200,100,0.2);color:var(--status-completed)}
+.node-pipeline{margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.03);font-size:0.65rem;font-family:monospace;color:var(--text-muted);display:flex;justify-content:space-between;letter-spacing:0.3px}
+.node-pipeline b{color:var(--accent-secondary)}
 
 /* Task Drawer */
 .task-drawer{position:absolute;top:0;right:-400px;width:400px;height:100%;background:var(--sidebar-bg);backdrop-filter:blur(30px);border-left:1px solid var(--border-color);z-index:20;transition:right 0.3s cubic-bezier(0.2,0.8,0.2,1);display:flex;flex-direction:column;box-shadow:-10px 0 30px rgba(0,0,0,0.5)}

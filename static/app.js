@@ -468,6 +468,22 @@ function renderGraph(tasks, completedResults) {
         }
         // Resolve the best available result for this task
         const resolvedResult = findTaskResult(task.id, completedResults);
+        
+        // Render Pipeline
+        const pipelineEl = el.querySelector('.node-pipeline');
+        if (pipelineEl && task.replica_stats) {
+            const s = task.replica_stats;
+            const k = task.k_factor || 1;
+            pipelineEl.innerHTML = `
+                <span>PLN: <b>${k}</b></span>
+                <span>QUE: <b>${s.pending}</b></span>
+                <span>ACT: <b>${s.dispatched}</b></span>
+                <span>DON: <b>${s.completed}</b></span>
+            `;
+        } else if (pipelineEl) {
+            pipelineEl.innerHTML = '';
+        }
+
         if (taskDrawer.classList.contains('open') && drawerTaskId.textContent === task.id) updateDrawer(task, vs, resolvedResult);
         el.onclick = () => { updateDrawer(task, vs, resolvedResult); taskDrawer.classList.add('open'); };
     });

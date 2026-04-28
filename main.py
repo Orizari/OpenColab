@@ -298,9 +298,12 @@ async def get_status(thread_id: str):
                 task_dict['status'] = 'queued'
             else:
                 task_dict['status'] = q_status
-                
             task_dict['assigned_worker_id'] = rt['worker_id']
             task_dict['attempts'] = rt.get('attempts', 0)
+            
+            # Add replica stats
+            task_dict['replica_stats'] = db.get_replica_stats(task_id, thread_id)
+            
             if q_status == 'processing':
                 any_processing = True
         

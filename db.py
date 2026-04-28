@@ -600,3 +600,22 @@ def get_evolution_context(limit: int = 20) -> str:
                 ctx += f"- [{i[2].upper()}] ({i[1]} votes) {i[0]}\n"
                 
             return ctx
+
+def get_replica_stats(parent_id: str, thread_id: str) -> dict:
+    \"\"\"Returns the counts of replicas in different stages for a parent task.\"\"\"
+    with _lock:
+        with sqlite3.connect(QUEUE_DB_PATH, timeout=15.0) as conn:
+            cursor = conn.cursor()
+            pattern = f"{parent_id}_rep%"
+            cursor.execute(\"\"\"
+                SELECT status, COUNT(*) 
+                FROM queue 
+                WHERE thread_id = ? AND task_id LIKE ? 
+                GROUP BY status
+            \"\"\", (thread_id, pattern))
+            rows = cursor.fetchall()
+            stats = {"pending": 0, "dispatched": 0, "completed": 0, "failed": 0}
+            for status, count in rows:
+                if status in stats:
+                    stats[status] = count
+            return stats
