@@ -31,11 +31,24 @@ def check_imports():
                 return False
     return True
 
+def check_fastapi():
+    print("🔍 Verifying FastAPI application...")
+    try:
+        # Use sub-process to avoid polluting this process
+        subprocess.run([sys.executable, "-c", "from main import app"], check=True, capture_output=True)
+        print("  ✅ FastAPI 'app' found in main.py")
+        return True
+    except Exception as e:
+        print("  ❌ FastAPI 'app' MISSING or broken in main.py")
+        return False
+
 def main():
     print("--- OpenColab Vitals Check ---")
     if not check_syntax():
         sys.exit(1)
     if not check_imports():
+        sys.exit(1)
+    if not check_fastapi():
         sys.exit(1)
     print("--- 🚀 System Vitals: HEALTHY ---")
     sys.exit(0)
