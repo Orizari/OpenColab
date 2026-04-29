@@ -618,7 +618,7 @@ def get_replica_stats(parent_id: str, thread_id: str) -> dict:
             pattern = f"{parent_id}_rep%"
             cursor.execute("""
                 SELECT status, COUNT(*) 
-                FROM queue 
+                FROM pending_tasks 
                 WHERE thread_id = ? AND task_id LIKE ? 
                 GROUP BY status
             """, (thread_id, pattern))
