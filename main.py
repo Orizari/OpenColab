@@ -11,6 +11,7 @@ import subprocess
 from datetime import datetime
 import uuid
 import threading
+import sys
 from collections import defaultdict
 
 import db
@@ -252,12 +253,23 @@ async def webhook_result(req: WebhookRequest, background_tasks: BackgroundTasks)
                         db.push_log(req.task_id, req.thread_id, "ℹ️ No file changes detected. System state remains synchronized.")
                         return
 
-                    # 2. Stage, Commit and Push
+                    # 2. Vitals Check (Guardian Guardrail)
+                    print(f"🛡️  Running Guardian vitals check for {req.task_id}...")
+                    vitals_proc = subprocess.run([sys.executable, "vitals_check.py"], capture_output=True, text=True)
+                    if vitals_proc.returncode != 0:
+                        print(f"❌ Vitals check FAILED for {req.task_id}! Initiating safety rollback.")
+                        # Rollback EVERYTHING including untracked files
+                        subprocess.run(["git", "reset", "--hard", "HEAD"], check=True)
+                        subprocess.run(["git", "clean", "-fd"], check=True)
+                        db.push_log(req.task_id, req.thread_id, f"🛑 CRITICAL: Improvement REJECTED. Safety vitals check failed:\n{vitals_proc.stdout}")
+                        return
+
+                    # 3. Stage, Commit and Push
                     subprocess.run(["git", "add", "."], check=True)
                     subprocess.run(["git", "commit", "-m", f"Autonomous Upgrade: {clean_desc}"], check=True)
                     subprocess.run(["git", "push", "origin", "main"], check=True)
                     print(f"✅ Changes for {req.task_id} committed and pushed.")
-                    db.push_log(req.task_id, req.thread_id, "✅ Changes committed and pushed to GitHub.")
+                    db.push_log(req.task_id, req.thread_id, "✅ Changes verified and pushed to GitHub.")
                 except Exception as e:
                     print(f"❌ Failed to commit autonomous changes: {e}")
                     db.push_log(req.task_id, req.thread_id, f"⚠️ Failed to push to GitHub: {e}")

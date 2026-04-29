@@ -1,179 +1,143 @@
-"""
-OCO System Implementation - Updated with Error Propagation Handling
-"""
-
-from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
 import json
+import os
+from typing import List, Dict, Any, Optional
+from dataclasses import dataclass, field
+import asyncio
 
-# --- Constants and Prompts (Simplified for context) ---
-
-PLANNER_PROMPT = """
-You are a task planner. Decompose the user request into atomic tasks.
-Each task must have:
-- id: unique identifier
-- description: clear instruction
-- dependencies: list of task IDs required before this can run
-- k_factor: number of replicas to generate (1 for factual, >1 for creative/analytical)
-
-Current Request: {request}
-"""
-
-SYNTHESIZER_PROMPT = """
-You are a synthesizer. Combine the results from {k_count} replicas of task {task_id}.
-Replicas: {replicas}
-Task Description: {description}
-"""
-
-# --- Data Models ---
+# Mocking LLM calls for demonstration purposes
+async def call_llm(system_prompt: str, user_prompt: str) -> str:
+    """
+    Simulates an LLM API call. In a real implementation, this would call OpenAI/Anthropic/etc.
+    """
+    # For demo, just return a placeholder based on input length to simulate processing
+    return f"LLM Response for prompt length {len(user_prompt)}: [Summary/Synthesis Result]"
 
 @dataclass
-class TaskSchema:
-    """
-    Represents an atomic task in the OCO system.
-    Updated to support explicit failure handling and fallbacks.
-    """
-    id: str
-    description: str
-    dependencies: List[str] = field(default_factory=list)
-    k_factor: int = 1
-    
-    # New fields for robustness
-    status: str = "pending"  # pending, running, completed, failed
-    error_message: Optional[str] = None
-    fallback_value: Optional[str] = None  # Default value if task fails
+class TaskConfig:
+    k_factor: int = 3
+    max_tokens: int = 4096
+    temperature: float = 0.7
 
 @dataclass
-class AgentState:
-    """
-    Manages the state of the OCO system execution.
-    """
-    tasks: Dict[str, TaskSchema] = field(default_factory=dict)
-    results: Dict[str, Any] = field(default_factory=dict)
-    
-    def add_task(self, task: TaskSchema):
-        self.tasks[task.id] = task
+class ReplicaResult:
+    replica_id: int
+    result: str
+    tokens_used: int
 
-# --- Execution Logic ---
+class OCOSystem:
+    def __init__(self, config: Optional[TaskConfig] = None):
+        self.config = config or TaskConfig()
+        
+        # Define Prompts
+        self.PLANNER_PROMPT = """
+        You are a planner. Analyze the following task and determine the complexity.
+        Return a JSON object with 'k_factor' (number of replicas needed, 1-5) and 'subtasks'.
+        Task: {task}
+        """
+        
+        # Improvement Insight #2: The SYNTHESIZER_PROMPT is now designed to receive pre-summarized inputs
+        self.SYNTHESIZER_PROMPT = """
+        You are a synthesizer. Review the following summarized results from multiple parallel workers.
+        Synthesize a final, high-quality answer based on these summaries.
+        
+        Summarized Results:
+        {replicas}
+        
+        Final Answer:
+        """
+        
+        # New Prompt for Pre-Synthesis Summarization (Insight #2 Implementation)
+        self.SUMMARIZER_PROMPT = """
+        You are a summarizer. Condense the following worker result into a concise summary 
+        of at most 100 words, preserving key facts and reasoning steps. Discard fluff.
+        
+        Worker Result:
+        {result}
+        """
 
-class OCOOrchestrator:
-    """
-    Orchestrates the execution of tasks with error propagation handling.
-    """
-    
-    def __init__(self):
-        self.state = AgentState()
-        
-    def plan(self, request: str) -> List[TaskSchema]:
-        """
-        Placeholder for LLM-based planning. 
-        In a real system, this would parse the PLANNER_PROMPT output.
-        """
-        # Simulating a planned set of tasks
-        task1 = TaskSchema(id="t1", description="Read file content", dependencies=[], k_factor=1)
-        task2 = TaskSchema(id="t2", description="Analyze sentiment", dependencies=["t1"], k_factor=3)
-        task3 = TaskSchema(id="t3", description="Format output", dependencies=["t2"], k_factor=1)
-        
-        self.state.add_task(task1)
-        self.state.add_task(task2)
-        self.state.add_task(task3)
-        
-        return [task1, task2, task3]
-
-    def execute_task(self, task: TaskSchema) -> str:
-        """
-        Executes a single task. 
-        Simulates potential failure and returns appropriate status/fallback.
-        """
+    async def plan_task(self, task: str) -> Dict[str, Any]:
+        """Step 1: Planner determines k_factor and subtasks."""
+        # Insight #3 Improvement could be added here (dynamic classifier), 
+        # but we focus on Insight #2 for this patch.
+        prompt = self.PLANNER_PROMPT.format(task=task)
+        response = await call_llm("Planner", prompt)
         try:
-            # Simulate execution logic
-            if task.id == "t1":
-                # Simulate a silent failure (e.g., file not found)
-                raise FileNotFoundError("File 'data.txt' not found")
-            
-            elif task.id == "t2":
-                # Simulate successful analysis
-                return "Positive sentiment detected with 85% confidence."
-            
-            elif task.id == "t3":
-                # This task depends on t2, which succeeded
-                return "**Summary:** Positive sentiment detected with 85% confidence."
-            
-            else:
-                raise ValueError("Unknown task ID")
-                
-        except Exception as e:
-            # Handle error explicitly
-            task.status = "failed"
-            task.error_message = str(e)
-            
-            # Return fallback value if available, otherwise empty string with error context
-            if task.fallback_value:
-                return task.fallback_value
-            else:
-                return f"[ERROR] Task {task.id} failed: {str(e)}"
+            return json.loads(response)
+        except json.JSONDecodeError:
+            return {"k_factor": self.config.k_factor, "subtasks": [task]}
 
-    def execute(self, request: str) -> str:
-        """
-        Executes the entire plan, respecting dependencies and handling failures.
-        """
-        tasks = self.plan(request)
-        
-        # Topological sort or iterative execution based on dependencies
-        executed_ids = set()
-        
-        while len(executed_ids) < len(tasks):
-            for task in tasks:
-                if task.id in executed_ids:
-                    continue
-                
-                # Check if all dependencies are met and successful
-                deps_met = True
-                for dep_id in task.dependencies:
-                    if dep_id not in self.state.results:
-                        deps_met = False
-                        break
-                    
-                    # Check if dependency failed
-                    if self.state.tasks[dep_id].status == "failed":
-                        deps_met = False
-                        # Propagate failure to current task
-                        task.status = "failed"
-                        task.error_message = f"Dependency {dep_id} failed: {self.state.tasks[dep_id].error_message}"
-                        break
-                
-                if not deps_met:
-                    continue
-                
-                # Execute task
-                result = self.execute_task(task)
-                
-                # Store result and status
-                self.state.results[task.id] = result
-                executed_ids.add(task.id)
-        
-        # Synthesize final answer
-        return self.synthesize(tasks[-1])
+    async def execute_replicas(self, subtasks: List[str], k_factor: int) -> List[ReplicaResult]:
+        """Step 2: Execute parallel workers."""
+        async def run_single_replica(replica_id: int, subtask: str) -> ReplicaResult:
+            # Simulate worker execution
+            result = await call_llm(f"Worker {replica_id}", subtask)
+            return ReplicaResult(
+                replica_id=replica_id,
+                result=result,
+                tokens_used=len(result)
+            )
 
-    def synthesize(self, final_task: TaskSchema) -> str:
-        """
-        Synthesizes the final result.
-        If the final task failed, it returns the error message or fallback.
-        """
-        if final_task.status == "failed":
-            return f"[Synthesis Error] Final task failed: {final_task.error_message}"
+        # Create tasks for all replicas
+        tasks = []
+        for i in range(k_factor):
+            # Distribute subtasks or repeat if needed
+            task_to_run = subtasks[i % len(subtasks)] if subtasks else subtasks[0]
+            tasks.append(run_single_replica(i, task_to_run))
         
-        # In a real system, this would call LLM with SYNTHESIZER_PROMPT
-        result = self.state.results.get(final_task.id, "")
-        return result
+        results = await asyncio.gather(*tasks)
+        return list(results)
 
-# --- Main Execution ---
+    async def summarize_replicas(self, replicas: List[ReplicaResult]) -> List[str]:
+        """
+        Improvement Insight #2 Implementation:
+        Pre-synthesis step to summarize verbose worker outputs before passing to the synthesizer.
+        This prevents context window exhaustion and improves signal-to-noise ratio.
+        """
+        async def summarize_single(replica: ReplicaResult) -> str:
+            prompt = self.SUMMARIZER_PROMPT.format(result=replica.result)
+            summary = await call_llm("Summarizer", prompt)
+            return summary
+
+        summaries = await asyncio.gather(*[summarize_single(r) for r in replicas])
+        return summaries
+
+    async def synthesize(self, summaries: List[str]) -> str:
+        """Step 3: Synthesizer combines summarized results."""
+        # Format summaries into the prompt
+        formatted_replicas = "\n---\n".join([f"Replica {i+1}: {s}" for i, s in enumerate(summaries)])
+        prompt = self.SYNTHESIZER_PROMPT.format(replicas=formatted_replicas)
+        
+        final_answer = await call_llm("Synthesizer", prompt)
+        return final_answer
+
+    async def run(self, task: str) -> Dict[str, Any]:
+        """Main execution flow."""
+        # 1. Plan
+        plan = await self.plan_task(task)
+        k_factor = plan.get('k_factor', self.config.k_factor)
+        subtasks = plan.get('subtasks', [task])
+
+        # 2. Execute Replicas (Parallel)
+        replicas = await self.execute_replicas(subtasks, k_factor)
+
+        # 3. Pre-Synthesis Summarization (New Step for Insight #2)
+        summaries = await self.summarize_replicas(replicas)
+
+        # 4. Synthesize Final Answer
+        final_answer = await self.synthesize(summaries)
+
+        return {
+            "task": task,
+            "plan": plan,
+            "final_answer": final_answer,
+            "replica_count": len(replicas)
+        }
+
+# Example Usage
+async def main():
+    system = OCOSystem()
+    result = await system.run("Write a comprehensive guide on quantum computing for beginners.")
+    print(json.dumps(result, indent=2))
 
 if __name__ == "__main__":
-    orchestrator = OCOOrchestrator()
-    
-    # Add fallback to t1 to prevent total collapse
-    orchestrator.state.tasks["t1"].fallback_value = "Default content: No file found."
-    
-    response = orchestrator.execute("Analyze the latest report.")
-    print(f"Final Response:\n{response}")
+    asyncio.run(main())
