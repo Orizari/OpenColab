@@ -448,11 +448,15 @@ def aggregator_node(state: AgentState, config: RunnableConfig) -> dict:
         {"id": f"SYSTEM_REFLECTION_{thread_id}", "status_key": "awaiting_reflection", "desc": "System Reflection Synthesis"}
     ]
     
+    # 2. Check for System Tasks (Consensus Evolution/Reflection)
+    system_check = [
+        {"id": f"SYSTEM_EVOLUTION_{thread_id}", "status_key": "awaiting_evolution", "desc": "System Evolution Synthesis"},
+        {"id": f"SYSTEM_REFLECTION_{thread_id}", "status_key": "awaiting_reflection", "desc": "System Reflection Synthesis"}
+    ]
+    
     for s in system_check:
         parent_id = s["id"]
-        # Only process if we haven't promoted it yet
-        if parent_id in completed_results:
-            continue
+        if parent_id in completed_results: continue
             
         reps = []
         for i in range(1, 4): 
@@ -475,7 +479,24 @@ def aggregator_node(state: AgentState, config: RunnableConfig) -> dict:
                 )
                 db.push_task(agg_task_id, thread_id, {"description": instruction})
 
-    return {"task_list": task_list, "completed_results": {**completed_results, **new_completed}, "status": "awaiting_aggregation"}
+    # Determine next status
+    is_still_waiting = False
+    for t in task_list:
+        if t["status"] == "dispatched":
+            is_still_waiting = True
+            break
+            
+    # If we have no more tasks to aggregate, go back to dispatching to see what's next
+    final_status = "awaiting_aggregation" if is_still_waiting else "dispatching"
+    
+    # Special case for system evolution/reflection
+    current_status = state.get("status")
+    if current_status in ["awaiting_evolution", "awaiting_reflection"]:
+        sys_id = f"SYSTEM_EVOLUTION_{thread_id}" if current_status == "awaiting_evolution" else f"SYSTEM_REFLECTION_{thread_id}"
+        if sys_id not in {**completed_results, **new_completed}:
+            final_status = current_status
+
+    return {"task_list": task_list, "completed_results": {**completed_results, **new_completed}, "status": final_status}
 
 def verification_node(state: AgentState, config: RunnableConfig) -> dict:
     print("--- VERIFICATION NODE ---")
