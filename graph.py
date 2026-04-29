@@ -196,7 +196,17 @@ def planner_node(state: AgentState, config: RunnableConfig) -> dict:
     req = state.get("original_request", "")
     print(f"Planner: Dispatching planning task for: '{req}'")
     prompt_tpl = db.get_system_prompt("PLANNER_PROMPT", PLANNER_PROMPT)
-    instruction = prompt_tpl.format(request=req)
+    
+    # Inject historical context
+    historical_context = db.get_relevant_insights(req)
+    
+    if "{historical_context}" in prompt_tpl:
+        instruction = prompt_tpl.format(request=req, historical_context=historical_context)
+    else:
+        # Append if placeholder missing but we have context
+        instruction = prompt_tpl.format(request=req)
+        instruction += f"\n\n## HISTORICAL CONTEXT (LESSONS LEARNED)\n{historical_context}"
+
     db.push_task(plan_task_id, thread_id, {"description": instruction})
     return {"status": "sleeping"}
 

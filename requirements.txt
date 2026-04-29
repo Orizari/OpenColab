@@ -16,4 +16,4 @@ langchain-core
 langgraph-sdk
 langgraph-prebuilt
 pydantic-settings
-watchfiles
+watchfilesurllib3<2.0

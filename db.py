@@ -628,3 +628,22 @@ def get_replica_stats(parent_id: str, thread_id: str) -> dict:
                 if status in stats:
                     stats[status] = count
             return stats
+            return stats
+
+def get_relevant_insights(request: str) -> str:
+    """Fetch past insights relevant to the current request using keyword matching."""
+    try:
+        with _lock:
+            with sqlite3.connect(QUEUE_DB_PATH, timeout=15.0) as conn:
+                cursor = conn.cursor()
+                # Simple keyword matching for demonstration
+                keywords = [k.lower() for k in request.split() if len(k) > 3][:10]
+                if not keywords: return "No prior context."
+                
+                query = "SELECT insight FROM agent_insights WHERE " + " OR ".join(["insight LIKE ?"] * len(keywords)) + " LIMIT 5"
+                params = [f"%{k}%" for k in keywords]
+                cursor.execute(query, params)
+                insights = [row[0] for row in cursor.fetchall()]
+                return "\n".join([f"- {i}" for i in insights]) if insights else "No prior context."
+    except Exception as e:
+        return f"Error fetching insights: {e}"
