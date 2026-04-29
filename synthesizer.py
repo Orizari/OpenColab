@@ -1,61 +1,50 @@
-import json
 import logging
 from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
 class Synthesizer:
-    def __init__(self, model_name: str):
-        self.model_name = model_name
+    def __init__(self, prompt_template: str):
+        self.prompt_template = prompt_template
 
-    def synthesize(self, query: str, replicas: List[str], k_factor: int) -> str:
+    def synthesize(self, replicas: List[str]) -> str:
         """
-        Synthesizes final answer from worker replicas.
+        Synthesizes results from multiple workers into a final answer.
         
-        Insight #3: Synthesizer Input Robustness
-        Explicitly handles cases where len(replicas) < k_factor or all replicas are empty.
-        Instructs the model to return "No valid results" rather than hallucinating.
+        Args:
+            replicas: List of result strings from workers.
+            
+        Returns:
+            Final synthesized answer or error message.
         """
-        
-        # Check for insufficient or empty replicas
-        if not replicas or len(replicas) < k_factor:
-            logger.warning(f"Insufficient valid replicas: {len(replicas)} provided, required {k_factor}.")
-            return "No valid results"
+        # Insight #3: Synthesizer Input Robustness
+        if not replicas or len(replicas) == 0:
+            return "No valid results to synthesize."
 
-        # Filter out empty strings from replicas to ensure quality input
-        valid_replicas = [r for r in replicas if r and len(r.strip()) > 0]
+        # Filter out empty strings or whitespace-only strings
+        valid_replicas = [r for r in replicas if r and str(r).strip()]
         
-        if len(valid_replicas) < k_factor:
-            logger.warning(f"Insufficient non-empty replicas: {len(valid_replicas)} provided, required {k_factor}.")
-            return "No valid results"
+        if len(valid_replicas) < 1: # k_factor could be configurable, defaulting to 1 minimum
+            return "No valid results to synthesize."
 
-        # Construct the synthesizer prompt
-        synthesizer_prompt = f"""
-        You are an expert synthesizer agent. Your task is to generate a comprehensive answer 
-        based on the following query and multiple independent worker replicas.
-        
-        Query: {query}
-        
-        Worker Replicas (must have at least {k_factor} valid entries):
-        {json.dumps(valid_replicas, indent=2)}
+        # Prepare prompt with robust handling
+        try:
+            prompt = self.prompt_template.format(
+                replicas=json.dumps(valid_replicas),
+                count=len(valid_replicas)
+            )
+            
+            # Call LLM to generate synthesis
+            response = self._call_llm(prompt)
+            return response
+            
+        except Exception as e:
+            logger.error(f"Synthesis failed: {str(e)}")
+            return "Failed to synthesize results."
 
-        Instructions:
-        1. Analyze all replicas for consistency and accuracy.
-        2. Synthesize a single, coherent final answer.
-        3. If the replicas are contradictory, prioritize the most detailed and logically sound information.
-        4. Do NOT hallucinate information not present in the replicas.
-        
-        Output the final answer directly:
+    def _call_llm(self, prompt: str) -> str:
         """
-
-        # Call LLM to synthesize
-        response = self._llm_call(synthesizer_prompt)
-        return response
-
-    def _llm_call(self, prompt: str) -> str:
+        Abstract method to call the LLM. Implement in subclass or via dependency injection.
         """
-        Placeholder for actual LLM API call.
-        """
-        # In a real implementation, this would call the LLM provider
-        logger.debug(f"Synthesizer LLM Call Prompt: {prompt[:100]}...")
-        return "Synthesized Answer Placeholder"  # Mock response
+        # Placeholder for actual LLM call
+        pass

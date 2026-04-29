@@ -57,6 +57,8 @@ const drawerDescription = document.getElementById('drawerDescription');
 const drawerResult = document.getElementById('drawerResult');
 const drawerFlow = document.getElementById('drawerFlow');
 const drawerTraces = document.getElementById('drawerTraces');
+const drawerChangesContainer = document.getElementById('drawerChangesContainer');
+const drawerChanges = document.getElementById('drawerChanges');
 
 // Log Panel
 const logPanel = document.getElementById('logPanel');
@@ -462,8 +464,9 @@ function renderGraph(tasks, completedResults) {
         let vs = task.status || 'pending';
         const directResult = completedResults[task.id];
         if (directResult) vs = 'completed';
-        el.className = `dag-node node-${vs}`;
-        el.querySelector('.node-badge').textContent = vs;
+        const isSystem = (task.id || "").startsWith('SYSTEM_') || (task.id || "").startsWith('APPLY_TASK_');
+        el.className = `dag-node node-${vs} ${isSystem ? 'node-system' : ''}`;
+        el.querySelector('.node-badge').textContent = isSystem ? `SYS:${vs}` : vs;
         const workerEl = el.querySelector('.node-worker');
         if (workerEl) workerEl.textContent = task.assigned_worker_id ? `⚙️ ${task.assigned_worker_id}` : '';
         
@@ -549,8 +552,43 @@ function updateDrawer(task, status, result, allTraces = []) {
     // 3. Trace Updates
     updateDrawerTraces(task.id, allTraces, result);
 
+    // 4. Implementation Detection (New)
+    handleImplementationDetection(result);
+
     if (logPollInterval && (isNewTask || !shouldPollLogs)) { clearInterval(logPollInterval); logPollInterval = null; }
     if (shouldPollLogs && !logPollInterval) startLogPolling(task.id);
+}
+
+function handleImplementationDetection(result) {
+    if (!result || typeof result !== 'string') {
+        drawerChangesContainer.style.display = 'none';
+        return;
+    }
+
+    const fileMatch = result.match(/FILE_WRITE:\s*([^\n]+)\s*CONTENT:\s*([\s\S]+?)END_FILE_WRITE/);
+    const promptMatch = result.match(/PROMPT_UPDATE:\s*([^\n]+)\s*NEW_PROMPT:\s*([\s\S]+?)END_PROMPT_UPDATE/);
+
+    if (fileMatch) {
+        drawerChangesContainer.style.display = 'block';
+        drawerChanges.innerHTML = `
+            <div class="change-header">📂 FILE_WRITE: <span class="change-file">${fileMatch[1]}</span></div>
+            <pre class="change-content"><code>${escapeHtml(fileMatch[2].trim())}</code></pre>
+        `;
+    } else if (promptMatch) {
+        drawerChangesContainer.style.display = 'block';
+        drawerChanges.innerHTML = `
+            <div class="change-header">📝 PROMPT_UPDATE: <span class="change-file">${promptMatch[1]}</span></div>
+            <pre class="change-content"><code>${escapeHtml(promptMatch[2].trim())}</code></pre>
+        `;
+    } else {
+        drawerChangesContainer.style.display = 'none';
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 function updateDrawerFlow(stats) {
