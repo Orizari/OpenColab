@@ -164,7 +164,10 @@ CONTENT:
 [full content]
 END_FILE_WRITE
 
-Format your response as a clear, technical proposal."""
+## Multiple Proposals
+If you have multiple independent improvements, separate them with the tag: `=== NEW_IMPROVEMENT ===`
+
+Format your response as a clear, technical proposal.
 
 
 def planner_node(state: AgentState, config: RunnableConfig) -> dict:
@@ -314,8 +317,18 @@ def evolution_node(state: AgentState, config: RunnableConfig) -> dict:
     evo_task_id = f"SYSTEM_EVOLUTION_{thread_id}"
     
     if evo_task_id in completed_results:
-        # Save the synthesized evolution as a top-level improvement
-        db.save_improvement(f"ARCHITECTURAL UPGRADE: {completed_results[evo_task_id][:500]}...", patch_data=completed_results[evo_task_id])
+        raw_output = completed_results[evo_task_id]
+        # Split by delimiter if multiple improvements proposed
+        proposals = [p.strip() for p in raw_output.split("=== NEW_IMPROVEMENT ===") if p.strip()]
+        
+        for p in proposals:
+            # Extract a title from the first line or first 100 chars
+            title = p.split('\n')[0][:100]
+            if not title.startswith("ARCHITECTURAL UPGRADE"):
+                title = f"ARCHITECTURAL UPGRADE: {title}"
+            db.save_improvement(title, patch_data=p)
+            
+        print(f"Evolution: Saved {len(proposals)} new improvement proposals.")
         return {"status": "finished"}
 
     # Get aggregate context (traces + other suggestions)
