@@ -1,234 +1,179 @@
-import json
-import time
-import random
-from typing import List, Dict, Any, Optional
+"""
+OCO System Implementation - Updated with Error Propagation Handling
+"""
+
 from dataclasses import dataclass, field
-from enum import Enum
+from typing import List, Optional, Dict, Any
+import json
 
-# Mocking external dependencies for demonstration purposes
-class LLMClient:
-    def __init__(self):
-        self.model = "gpt-4"
-    
-    def generate(self, prompt: str) -> str:
-        # Simulate LLM response with slight randomness to simulate variance
-        return f"Response from {self.model} for prompt: {prompt[:20]}..."
+# --- Constants and Prompts (Simplified for context) ---
 
-class CodeExecutor:
-    @staticmethod
-    def execute(code: str) -> Dict[str, Any]:
-        # Simulate code execution result
-        return {"status": "success", "output": "Executed successfully"}
+PLANNER_PROMPT = """
+You are a task planner. Decompose the user request into atomic tasks.
+Each task must have:
+- id: unique identifier
+- description: clear instruction
+- dependencies: list of task IDs required before this can run
+- k_factor: number of replicas to generate (1 for factual, >1 for creative/analytical)
+
+Current Request: {request}
+"""
+
+SYNTHESIZER_PROMPT = """
+You are a synthesizer. Combine the results from {k_count} replicas of task {task_id}.
+Replicas: {replicas}
+Task Description: {description}
+"""
+
+# --- Data Models ---
 
 @dataclass
-class TaskNode:
+class TaskSchema:
+    """
+    Represents an atomic task in the OCO system.
+    Updated to support explicit failure handling and fallbacks.
+    """
     id: str
     description: str
     dependencies: List[str] = field(default_factory=list)
-    k_factor: int = 1  # Number of replicas
-    status: str = "pending"
-    result: Optional[Any] = None
-    confidence_score: float = 0.0
+    k_factor: int = 1
+    
+    # New fields for robustness
+    status: str = "pending"  # pending, running, completed, failed
+    error_message: Optional[str] = None
+    fallback_value: Optional[str] = None  # Default value if task fails
 
 @dataclass
-class TaskGraph:
-    nodes: Dict[str, TaskNode] = field(default_factory=dict)
-    edges: List[tuple] = field(default_factory=list)
+class AgentState:
+    """
+    Manages the state of the OCO system execution.
+    """
+    tasks: Dict[str, TaskSchema] = field(default_factory=dict)
+    results: Dict[str, Any] = field(default_factory=dict)
+    
+    def add_task(self, task: TaskSchema):
+        self.tasks[task.id] = task
 
-    def add_node(self, node: TaskNode):
-        self.nodes[node.id] = node
+# --- Execution Logic ---
 
-    def get_ready_nodes(self) -> List[TaskNode]:
-        return [n for n in self.nodes.values() if n.status == "pending" and all(
-            self.nodes[dep].status == "completed" for dep in n.dependencies
-        )]
-
-class OCOSystem:
+class OCOOrchestrator:
+    """
+    Orchestrates the execution of tasks with error propagation handling.
+    """
+    
     def __init__(self):
-        self.llm = LLMClient()
-        self.executor = CodeExecutor()
-        self.planner_prompt = """
-        You are an expert task planner. Decompose the following user request into atomic tasks.
+        self.state = AgentState()
         
-        User Request: {user_request}
-        
-        Output format: JSON list of objects with keys: 'id', 'description', 'dependencies' (list of ids), 'k_factor'.
-        Ensure tasks are atomic and dependencies are valid.
+    def plan(self, request: str) -> List[TaskSchema]:
         """
-
-        # Improvement 2: Critique-and-Replan Loop for Planner
-        self.planner_critique_prompt = """
-        You are a task graph critic. Review the following planned tasks for atomicity, completeness, and logical dependency correctness.
-        
-        Original Request: {user_request}
-        Planned Tasks: {planned_tasks_json}
-        
-        If the plan is flawed, provide a corrected JSON list of tasks. If it is correct, return the original list.
+        Placeholder for LLM-based planning. 
+        In a real system, this would parse the PLANNER_PROMPT output.
         """
+        # Simulating a planned set of tasks
+        task1 = TaskSchema(id="t1", description="Read file content", dependencies=[], k_factor=1)
+        task2 = TaskSchema(id="t2", description="Analyze sentiment", dependencies=["t1"], k_factor=3)
+        task3 = TaskSchema(id="t3", description="Format output", dependencies=["t2"], k_factor=1)
+        
+        self.state.add_task(task1)
+        self.state.add_task(task2)
+        self.state.add_task(task3)
+        
+        return [task1, task2, task3]
 
-        # Improvement 1: External Verification for Auditor
-        self.auditor_prompt = """
-        You are an OCO Quality Auditor. Evaluate the following task result based on the original request and any provided context.
-        
-        Original Request: {user_request}
-        Task Result: {task_result}
-        Context (if applicable): {context}
-        
-        Output format: JSON with 'score' (0-1) and 'feedback'.
+    def execute_task(self, task: TaskSchema) -> str:
         """
-
-    def plan_tasks(self, user_request: str) -> TaskGraph:
-        # Step 1: Initial Planning
-        prompt = self.planner_prompt.format(user_request=user_request)
-        raw_response = self.llm.generate(prompt)
-        
+        Executes a single task. 
+        Simulates potential failure and returns appropriate status/fallback.
+        """
         try:
-            planned_tasks = json.loads(raw_response)
-        except json.JSONDecodeError:
-            return TaskGraph()
-
-        # Construct initial graph
-        graph = TaskGraph()
-        for task in planned_tasks:
-            node = TaskNode(
-                id=task['id'],
-                description=task['description'],
-                dependencies=task.get('dependencies', []),
-                k_factor=task.get('k_factor', 1)
-            )
-            graph.add_node(node)
-
-        # Improvement 2: Critique and Replan Loop
-        max_iterations = 3
-        for i in range(max_iterations):
-            critique_prompt = self.planner_critique_prompt.format(
-                user_request=user_request,
-                planned_tasks_json=json.dumps(planned_tasks)
-            )
-            critique_response = self.llm.generate(critique_prompt)
+            # Simulate execution logic
+            if task.id == "t1":
+                # Simulate a silent failure (e.g., file not found)
+                raise FileNotFoundError("File 'data.txt' not found")
             
-            try:
-                refined_tasks = json.loads(critique_response)
-                # If the plan didn't change significantly, break loop
-                if refined_tasks == planned_tasks:
-                    break
-                
-                # Update graph with refined tasks
-                new_graph = TaskGraph()
-                for task in refined_tasks:
-                    node = TaskNode(
-                        id=task['id'],
-                        description=task['description'],
-                        dependencies=task.get('dependencies', []),
-                        k_factor=task.get('k_factor', 1)
-                    )
-                    new_graph.add_node(node)
-                
-                graph = new_graph
-                planned_tasks = refined_tasks
-                
-            except json.JSONDecodeError:
-                # If critique fails to parse, keep current plan
-                break
-
-        return graph
-
-    def execute_task(self, node: TaskNode) -> Dict[str, Any]:
-        # Improvement 3: Dynamic Resource Allocation based on initial confidence/complexity
-        # In a real scenario, this would fetch real-time metrics. Here we simulate variance.
-        
-        # Simulate getting initial responses from replicas
-        initial_responses = []
-        for _ in range(node.k_factor):
-            response = self.llm.generate(node.description)
-            initial_responses.append(response)
-        
-        # Calculate variance among initial responses to determine need for more resources or verification
-        # Simple heuristic: if responses are identical, low variance. If different, high variance.
-        unique_responses = len(set(initial_responses))
-        variance_score = 1.0 - (unique_responses / node.k_factor) if node.k_factor > 0 else 0
-        
-        # Improvement 3: Dynamic Adjustment
-        # If variance is high (responses differ), increase replicas for robustness
-        effective_k = node.k_factor
-        if variance_score > 0.5:
-            effective_k = min(node.k_factor * 2, 10) # Cap at 10
-        
-        final_responses = []
-        for _ in range(effective_k):
-            response = self.llu.generate(node.description)
-            final_responses.append(response)
-        
-        # Aggregate result (simple majority vote or last one for demo)
-        aggregated_result = final_responses[-1] if final_responses else "No result"
-
-        return {
-            "result": aggregated_result,
-            "variance_score": variance_score,
-            "effective_k": effective_k
-        }
-
-    def audit_task(self, node: TaskNode, user_request: str) -> float:
-        # Improvement 1: External Verification
-        # Check if task involves code execution
-        if "code" in node.description.lower() or "execute" in node.description.lower():
-            exec_result = self.executor.execute(node.result)
-            if exec_result["status"] != "success":
-                return 0.0
-        
-        prompt = self.auditor_prompt.format(
-            user_request=user_request,
-            task_result=node.result,
-            context="N/A" # Could be retrieved documents here
-        )
-        
-        audit_response = self.llm.generate(prompt)
-        try:
-            audit_json = json.loads(audit_response)
-            return audit_json.get('score', 0.0)
-        except json.JSONDecodeError:
-            return 0.0
-
-    def run(self, user_request: str) -> Any:
-        graph = self.plan_tasks(user_request)
-        
-        # Topological sort execution
-        while any(n.status == "pending" for n in graph.nodes.values()):
-            ready_nodes = graph.get_ready_nodes()
+            elif task.id == "t2":
+                # Simulate successful analysis
+                return "Positive sentiment detected with 85% confidence."
             
-            if not ready_nodes:
-                raise ValueError("Circular dependency detected or invalid graph")
+            elif task.id == "t3":
+                # This task depends on t2, which succeeded
+                return "**Summary:** Positive sentiment detected with 85% confidence."
             
-            for node in ready_nodes:
-                # Execute
-                exec_result = self.execute_task(node)
-                node.result = exec_result["result"]
+            else:
+                raise ValueError("Unknown task ID")
                 
-                # Audit
-                confidence = self.audit_task(node, user_request)
-                node.confidence_score = confidence
-                
-                if confidence < 0.5:
-                    # Improvement 1: Retry or flag for human review
-                    print(f"Low confidence on task {node.id}. Retrying...")
-                    node.result = self.execute_task(node)["result"]
-                    confidence = self.audit_task(node, user_request)
-                    node.confidence_score = confidence
-                
-                node.status = "completed"
+        except Exception as e:
+            # Handle error explicitly
+            task.status = "failed"
+            task.error_message = str(e)
+            
+            # Return fallback value if available, otherwise empty string with error context
+            if task.fallback_value:
+                return task.fallback_value
+            else:
+                return f"[ERROR] Task {task.id} failed: {str(e)}"
 
-        # Return the result of the final node (simplified for demo)
-        final_nodes = [n for n in graph.nodes.values() if not any(
-            n.id == dep for _, dep in graph.edges
-        )]
+    def execute(self, request: str) -> str:
+        """
+        Executes the entire plan, respecting dependencies and handling failures.
+        """
+        tasks = self.plan(request)
         
-        if final_nodes:
-            return final_nodes[-1].result
-        return None
+        # Topological sort or iterative execution based on dependencies
+        executed_ids = set()
+        
+        while len(executed_ids) < len(tasks):
+            for task in tasks:
+                if task.id in executed_ids:
+                    continue
+                
+                # Check if all dependencies are met and successful
+                deps_met = True
+                for dep_id in task.dependencies:
+                    if dep_id not in self.state.results:
+                        deps_met = False
+                        break
+                    
+                    # Check if dependency failed
+                    if self.state.tasks[dep_id].status == "failed":
+                        deps_met = False
+                        # Propagate failure to current task
+                        task.status = "failed"
+                        task.error_message = f"Dependency {dep_id} failed: {self.state.tasks[dep_id].error_message}"
+                        break
+                
+                if not deps_met:
+                    continue
+                
+                # Execute task
+                result = self.execute_task(task)
+                
+                # Store result and status
+                self.state.results[task.id] = result
+                executed_ids.add(task.id)
+        
+        # Synthesize final answer
+        return self.synthesize(tasks[-1])
 
-# Example Usage
+    def synthesize(self, final_task: TaskSchema) -> str:
+        """
+        Synthesizes the final result.
+        If the final task failed, it returns the error message or fallback.
+        """
+        if final_task.status == "failed":
+            return f"[Synthesis Error] Final task failed: {final_task.error_message}"
+        
+        # In a real system, this would call LLM with SYNTHESIZER_PROMPT
+        result = self.state.results.get(final_task.id, "")
+        return result
+
+# --- Main Execution ---
+
 if __name__ == "__main__":
-    oco = OCOSystem()
-    request = "Write a python function to calculate fibonacci and execute it."
-    result = oco.run(request)
-    print(f"Final Result: {result}")
+    orchestrator = OCOOrchestrator()
+    
+    # Add fallback to t1 to prevent total collapse
+    orchestrator.state.tasks["t1"].fallback_value = "Default content: No file found."
+    
+    response = orchestrator.execute("Analyze the latest report.")
+    print(f"Final Response:\n{response}")
