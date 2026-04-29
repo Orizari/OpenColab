@@ -101,12 +101,15 @@ def run_worker():
                 task_desc = payload.get("description", "")
                 file_paths = payload.get("file_paths", [])
                 
+                # Increase timeout for complex system tasks
+                timeout = 600 if "SYSTEM_" in task_id or "APPLY_" in task_id else 300
+                
                 llm = ChatOpenAI(
                     base_url=LLM_BASE_URL,
                     api_key="sk-no-key-required",
                     model=LLM_MODEL,
                     temperature=0.2,
-                    request_timeout=300,
+                    request_timeout=timeout,
                 )
 
                 # Detect task type for appropriate handling

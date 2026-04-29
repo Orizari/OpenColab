@@ -436,8 +436,26 @@ function renderGraph(tasks, completedResults) {
             const nodeEl = clone.querySelector('.dag-node');
             nodeEl.dataset.id = task.id;
             nodeEl.querySelector('.node-id').textContent = task.id;
-            nodeEl.querySelector('.node-body').textContent = task.description;
+            const body = nodeEl.querySelector('.node-body');
+            body.textContent = task.description;
+            body.title = task.description; // Hover for full text
+
             if (layout[task.id]) { nodeEl.style.left = `${layout[task.id].x}px`; nodeEl.style.top = `${layout[task.id].y}px`; }
+            
+            // Sub-Flow Logic Diagram
+            let miniFlow = nodeEl.querySelector('.mini-flow');
+            if (!miniFlow) {
+                miniFlow = document.createElement('div');
+                miniFlow.className = 'mini-flow';
+                miniFlow.innerHTML = `
+                    <div class="mini-step" data-label="PLN"></div>
+                    <div class="mini-step" data-label="QUE"></div>
+                    <div class="mini-step" data-label="ACT"></div>
+                    <div class="mini-step" data-label="DON"></div>
+                `;
+                nodeEl.appendChild(miniFlow);
+            }
+
             nodesContainer.appendChild(nodeEl);
             nodesMap[task.id] = nodeEl;
             
@@ -476,6 +494,17 @@ function renderGraph(tasks, completedResults) {
             attemptsEl.style.display = task.attempts > 0 ? 'inline' : 'none';
         }
         
+        // Update Mini-Flow Logic
+        let miniFlow = el.querySelector('.mini-flow');
+        if (miniFlow) {
+            const steps = miniFlow.querySelectorAll('.mini-step');
+            steps.forEach(s => s.classList.remove('active', 'completed'));
+            if (vs === 'planning') { steps[0].classList.add('active'); }
+            else if (vs === 'pending' || vs === 'dispatched' || vs === 'queued') { steps[0].classList.add('completed'); steps[1].classList.add('active'); }
+            else if (vs === 'processing') { steps[0].classList.add('completed'); steps[1].classList.add('completed'); steps[2].classList.add('active'); }
+            else if (vs === 'completed') { steps.forEach(step => step.classList.add('completed')); }
+        }
+
         if (vs === 'processing' || vs === 'dispatched') {
             if (task.dependencies) task.dependencies.forEach(depId => { const line = document.getElementById(`line-${depId}-${task.id}`); if (line) line.classList.add('active'); });
         } else if (vs === 'completed') {
