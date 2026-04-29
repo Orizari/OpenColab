@@ -591,10 +591,19 @@ def get_evolution_context(limit: int = 20) -> str:
             cursor.execute("SELECT description, votes, status FROM proposed_improvements WHERE status = 'pending' ORDER BY votes DESC LIMIT 10")
             imps = cursor.fetchall()
             
+            # Get recent errors
+            cursor.execute("SELECT task_id, message FROM task_logs WHERE message LIKE '%error%' OR message LIKE '%failed%' ORDER BY created_at DESC LIMIT 10")
+            errors = cursor.fetchall()
+            
             ctx = "## RECENT EXECUTION TRACES\n"
             for t in traces:
                 ctx += f"Task: {t[0]}\nPrompt: {t[1][:200]}...\nResult Snippet: {t[3][:200]}...\n---\n"
             
+            if errors:
+                ctx += "\n## RECENT SYSTEM ERRORS (DIAGNOSTICS)\n"
+                for e in errors:
+                    ctx += f"[{e[0]}] {e[1][:300]}\n"
+
             ctx += "\n## PENDING IMPROVEMENT SUGGESTIONS\n"
             for i in imps:
                 ctx += f"- [{i[2].upper()}] ({i[1]} votes) {i[0]}\n"

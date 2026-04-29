@@ -147,6 +147,7 @@ Your goal is to synthesize 1-2 high-impact, architectural improvements to the sy
 2. Look for common themes in the pending suggestions.
 3. Propose a specific, code-level improvement. 
 4. **Safety First**: Prefer `FILE_PATCH` for modifying specific blocks. Use `FILE_WRITE` only when creating new files.
+5. **Holistic Refactoring**: You can propose multiple patches across different files in a single response to ensure architectural consistency.
 
 ## Output Convention
 ### To update an existing file (Surgical Edit):
@@ -336,7 +337,7 @@ def evolution_node(state: AgentState, config: RunnableConfig) -> dict:
     if state.get("status") == "awaiting_evolution":
         return {"status": "awaiting_evolution"}
 
-    db.push_task(evo_task_id, thread_id, {"description": instruction})
+    db.push_task(evo_task_id, thread_id, {"description": instruction}, k_factor=3)
     return {"status": "awaiting_evolution"}
 
 def dispatcher_node(state: AgentState, config: RunnableConfig) -> dict:
