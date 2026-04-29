@@ -146,7 +146,22 @@ Your goal is to synthesize 1-2 high-impact, architectural improvements to the sy
 1. Analyze the patterns in the traces (failures, successes, bottlenecks).
 2. Look for common themes in the pending suggestions.
 3. Propose a specific, code-level improvement. 
-4. If possible, provide a code patch in standard diff format.
+4. **Safety First**: Prefer `FILE_PATCH` for modifying specific blocks. Use `FILE_WRITE` only when creating new files.
+
+## Output Convention
+### To update an existing file (Surgical Edit):
+FILE_PATCH: filename.py
+SEARCH:
+[exact code block to find]
+REPLACE:
+[new code block to insert]
+END_FILE_PATCH
+
+### To create or overwrite a full file:
+FILE_WRITE: filename.py
+CONTENT:
+[full content]
+END_FILE_WRITE
 
 Format your response as a clear, technical proposal."""
 

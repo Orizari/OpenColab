@@ -156,7 +156,8 @@ def run_worker():
                 # Autonomous System Application Logic
                 if "APPLY_TASK_" in task_id:
                     print(f"[{worker_id}] Detected Application Task. Parsing for system changes...")
-                    # 1. Check for File Writes
+                    
+                    # 1. Full File Writes
                     if "FILE_WRITE:" in result_text and "CONTENT:" in result_text:
                         try:
                             parts = result_text.split("FILE_WRITE:")
@@ -171,7 +172,31 @@ def run_worker():
                         except Exception as e:
                             print(f"[{worker_id}] Error during file write: {e}")
 
-                    # 2. Check for Prompt Updates
+                    # 2. Smart File Patching (New)
+                    if "FILE_PATCH:" in result_text and "SEARCH:" in result_text and "REPLACE:" in result_text:
+                        try:
+                            parts = result_text.split("FILE_PATCH:")
+                            for part in parts[1:]:
+                                filename = part.split("SEARCH:")[0].strip()
+                                search_block = part.split("SEARCH:")[1].split("REPLACE:")[0].strip()
+                                replace_block = part.split("REPLACE:")[1].split("END_FILE_PATCH")[0].strip()
+                                
+                                if filename and search_block and os.path.exists(filename):
+                                    print(f"[{worker_id}] AUTONOMOUS PATCH: Modifying {filename}")
+                                    with open(filename, "r") as f:
+                                        file_content = f.read()
+                                    
+                                    if search_block in file_content:
+                                        new_content = file_content.replace(search_block, replace_block)
+                                        with open(filename, "w") as f:
+                                            f.write(new_content)
+                                        print(f"[{worker_id}] File {filename} patched successfully.")
+                                    else:
+                                        print(f"[{worker_id}] Warning: Search block not found in {filename}")
+                        except Exception as e:
+                            print(f"[{worker_id}] Error during file patch: {e}")
+
+                    # 3. Prompt Updates
                     if "PROMPT_UPDATE:" in result_text and "NEW_PROMPT:" in result_text:
                         try:
                             prompt_name = result_text.split("PROMPT_UPDATE:")[1].split("NEW_PROMPT:")[0].strip()

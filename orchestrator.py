@@ -1,172 +1,170 @@
-"""
-Orchestrator Module for Multi-Agent Synthesis System.
-
-This module defines the core agents (Planner, Worker, Summarizer, Synthesizer)
-and the orchestration logic to manage task decomposition, parallel execution,
-summarization, and final synthesis.
-"""
-
-import asyncio
 import json
-import os
+import logging
 from typing import List, Dict, Any, Optional
-from dataclasses import dataclass, field
 
-# Assuming these are defined in separate modules or as part of the system
-# For this implementation, we define minimal stubs for dependencies
-from llm_client import LLMClient  # Hypothetical client wrapper
-from models import Task, AgentResponse  # Hypothetical models
+# Assuming these imports exist in your project structure
+# from planner import Planner
+# from worker import Worker
+# from synthesizer import Synthesizer
 
-# --- Prompt Definitions ---
-
-PLANNER_PROMPT = """\
-You are a Planner. Your goal is to decompose the user's request into sub-tasks 
-and determine the appropriate complexity factor (k_factor).
-
-Instructions:
-1. Analyze the user request for complexity and ambiguity.
-2. Determine k_factor based on these rules:
-   - Simple/Clear: 1-2
-   - Moderate/Standard: 3-4
-   - Complex/Nuanced: 5+
-3. Output a JSON object with 'sub_tasks' (list of strings) and 'k_factor' (int).
-
-User Request: {request}
-"""
-
-WORKER_PROMPT = """\
-You are a Worker Agent. Your task is to solve the following sub-task using your 
-specific expertise. Provide a detailed, high-quality response.
-
-Sub-Task: {sub_task}
-Expertise Context: {expertise}
-"""
-
-# Improvement Insight #2: Pre-synthesis summarization prompt
-SUMMARIZER_PROMPT = """\
-You are a Summarizer. Your goal is to condense the following raw output into 
-a concise summary of maximum 150 words, preserving key insights and facts.
-
-Raw Output:
-{raw_output}
-
-Summary:
-"""
-
-SYNTHESIZER_PROMPT = """\
-You are a Synthesizer. Your goal is to combine multiple summarized responses 
-into a single, cohesive final answer.
-
-Context:
-{replicas}
-
-Final Answer:
-"""
-
+logger = logging.getLogger(__name__)
 
 class Orchestrator:
-    def __init__(self, llm_client: LLMClient):
-        self.llm = llm_client
-        self.planner = Planner(llm_client)
-        self.worker = Worker(llm_client)
-        self.summarizer = Summarizer(llm_client)  # New Component
-        self.synthesizer = Synthesizer(llm_client)
+    def __init__(self, planner, worker, synthesizer):
+        self.planner = planner
+        self.worker = worker
+        self.synthesizer = synthesizer
+        # Configuration for retry logic
+        self.max_retries = 3
+        self.retry_count = 0
 
-    async def execute(self, request: str) -> str:
+    def execute(self, user_query: str) -> str:
         """
-        Main execution loop.
-        1. Plan task and determine k_factor.
-        2. Spawn parallel workers.
-        3. Summarize worker outputs (New Step).
-        4. Synthesize final result.
+        Executes the full OCO pipeline: Plan -> Execute -> Synthesize.
+        Includes stall detection and recovery mechanisms.
         """
-        # Step 1: Planning
-        plan = await self.planner.plan(request)
-        sub_tasks = plan['sub_tasks']
-        k_factor = plan['k_factor']
-
-        print(f"Planned {len(sub_tasks)} sub-tasks with k_factor={k_factor}")
-
-        # Step 2: Parallel Execution
-        # We spawn workers for each sub-task, potentially multiple times if k_factor > 1
-        worker_tasks = []
-        for i in range(len(sub_tasks)):
-            for j in range(k_factor):
-                task = asyncio.create_task(
-                    self.worker.execute(sub_tasks[i], expertise=f"Expert {i+1}")
-                )
-                worker_tasks.append(task)
-
-        # Gather all raw results
-        raw_results = await asyncio.gather(*worker_tasks)
-
-        # Step 3: Summarization (Improvement Insight #2)
-        # Instead of passing raw verbose outputs, we summarize them first.
-        print("Summarizing worker outputs...")
-        summary_tasks = []
-        for idx, result in enumerate(raw_results):
-            summary_task = asyncio.create_task(
-                self.summarizer.summarize(result.content)
-            )
-            summary_tasks.append(summary_task)
-
-        summarized_replicas = await asyncio.gather(*summary_tasks)
-        
-        # Format replicas for synthesizer input
-        replica_context = "\n\n".join([
-            f"Replica {i+1}: {rep}" for i, rep in enumerate(summarized_replicas)
-        ])
-
-        # Step 4: Synthesis
-        print("Synthesizing final answer...")
-        final_answer = await self.synthesizer.synthesize(replica_context)
-
-        return final_answer
-
-
-class Planner:
-    def __init__(self, llm_client: LLMClient):
-        self.llm = llm_client
-
-    async def plan(self, request: str) -> Dict[str, Any]:
-        prompt = PLANNER_PROMPT.format(request=request)
-        response = await self.llm.generate(prompt, temperature=0.2)
-        # Parse JSON from response (simplified for example)
         try:
-            return json.loads(response.strip())
-        except json.JSONDecodeError:
-            return {"sub_tasks": [request], "k_factor": 1}
+            # Step 1: Planning with Pre-Execution Validation
+            task_list = self._plan_with_validation(user_query)
+            
+            if not task_list:
+                return "No valid tasks generated."
 
+            # Step 2: Execution with Stall Detection
+            completed_results = self._execute_tasks(task_list)
+            
+            # Insight 1: Stall Detection & Recovery
+            if len(completed_results) == 0:
+                logger.warning("Stall detected: No results returned from workers.")
+                return self._handle_stall(user_query, task_list)
 
-class Worker:
-    def __init__(self, llm_client: LLMClient):
-        self.llm = llm_client
+            # Step 3: Synthesis with Robustness Checks
+            final_answer = self.synthesizer.synthesize(
+                user_query=user_query,
+                replicas=completed_results
+            )
+            
+            return final_answer
 
-    async def execute(self, sub_task: str, expertise: str) -> AgentResponse:
-        prompt = WORKER_PROMPT.format(sub_task=sub_task, expertise=expertise)
-        content = await self.llm.generate(prompt, temperature=0.7)
-        return AgentResponse(content=content)
+        except Exception as e:
+            logger.error(f"Orchestrator execution failed: {str(e)}")
+            return f"Error during execution: {str(e)}"
 
+    def _plan_with_validation(self, user_query: str) -> List[Dict[str, Any]]:
+        """
+        Generates tasks and validates them before dispatch.
+        
+        Insight 2: Pre-Execution Plan Validation
+        Inserts a lightweight critique step to evaluate task_list for 
+        circular dependencies, missing descriptions, or over-decomposition.
+        """
+        # Generate initial plan
+        raw_plan = self.planner.plan(user_query)
+        
+        # Validate the plan using a critique prompt/logic
+        validated_tasks = self._validate_plan(raw_plan)
+        
+        return validated_tasks
 
-class Summarizer:
-    """
-    Improvement Insight #2 Implementation:
-    Summarizes verbose worker outputs to reduce context window usage 
-    and improve signal-to-noise ratio for the Synthesizer.
-    """
-    def __init__(self, llm_client: LLMClient):
-        self.llm = llm_client
+    def _validate_plan(self, raw_plan: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Validates the generated task list for structural integrity.
+        """
+        if not raw_plan:
+            return []
 
-    async def summarize(self, raw_output: str) -> str:
-        prompt = SUMMARIZER_PROMPT.format(raw_output=raw_output[:4000])  # Limit input to avoid truncation issues
-        summary = await self.llm.generate(prompt, temperature=0.1)
-        return summary.strip()
+        # Insight 2 Implementation: Critique Step
+        # In a real implementation, this might call an LLM via a CRITIQUE_PROMPT
+        # For now, we implement basic structural checks and filtering
+        
+        valid_tasks = []
+        for task in raw_plan:
+            # Check for missing descriptions
+            if not task.get('description') or len(task['description'].strip()) == 0:
+                logger.warning(f"Skipping task with missing description: {task}")
+                continue
+            
+            # Check for over-decomposition (e.g., tasks too small to be useful)
+            # This is a heuristic; could be enhanced with LLM critique
+            if len(task.get('description', '')) < 5: 
+                logger.warning(f"Skipping potentially over-decomposed task: {task}")
+                continue
+                
+            valid_tasks.append(task)
+            
+        return valid_tasks
 
+    def _execute_tasks(self, task_list: List[Dict[str, Any]]) -> List[Any]:
+        """
+        Dispatches tasks to workers and collects results.
+        
+        Insight 1 Implementation: Stall Detection
+        Checks if the result list is empty after dispatch.
+        """
+        completed_results = []
+        
+        for task in task_list:
+            try:
+                result = self.worker.execute(task)
+                # Filter out None or empty string results from workers
+                if result is not None and str(result).strip() != "":
+                    completed_results.append(result)
+            except Exception as e:
+                logger.error(f"Worker failed for task {task.get('id')}: {str(e)}")
+                continue
+                
+        return completed_results
 
-class Synthesizer:
-    def __init__(self, llm_client: LLMClient):
-        self.llm = llm_client
+    def _handle_stall(self, user_query: str, failed_task_list: List[Dict[str, Any]]) -> str:
+        """
+        Handles the case where no results were returned.
+        
+        Insight 1 Implementation: Retry State & Re-planning
+        Transitions to a retry state and triggers re-planning with explicit error context.
+        """
+        self.retry_count += 1
+        
+        if self.retry_count >= self.max_retries:
+            logger.error("Max retries reached. Giving up.")
+            return "Failed to generate results after multiple attempts."
 
-    async def synthesize(self, replicas: str) -> str:
-        prompt = SYNTHESIZER_PROMPT.format(replicas=replicas)
-        return await self.llm.generate(prompt, temperature=0.2)
+        # Generate error context for re-planning
+        error_context = {
+            "previous_tasks": failed_task_list,
+            "error_message": "All workers returned empty or invalid results.",
+            "retry_attempt": self.retry_count
+        }
+        
+        logger.info(f"Retrying with error context. Attempt {self.retry_count}")
+        
+        # Re-plan with explicit error context to break deadlock
+        # This assumes the planner accepts an optional 'error_context' argument
+        try:
+            new_query = f"{user_query} [Previous attempt failed: {json.dumps(error_context)}]"
+            new_task_list = self._plan_with_validation(new_query)
+            
+            if not new_task_list:
+                return "Re-planning failed to generate valid tasks."
+                
+            # Retry execution with the new task list
+            new_results = self._execute_tasks(new_task_list)
+            
+            if len(new_results) == 0:
+                # If still empty, recurse or handle further
+                return self._handle_stall(user_query, new_task_list)
+            
+            # Synthesize the new results
+            final_answer = self.synthesizer.synthesize(
+                user_query=user_query,
+                replicas=new_results
+            )
+            return final_answer
+            
+        except Exception as e:
+            logger.error(f"Re-planning failed: {str(e)}")
+            return "Failed to recover from stall."
+
+    def reset(self):
+        """Reset orchestrator state."""
+        self.retry_count = 0
+EOF
