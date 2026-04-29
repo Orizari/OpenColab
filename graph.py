@@ -409,20 +409,18 @@ def aggregator_node(state: AgentState, config: RunnableConfig) -> dict:
     k_global = state.get("k_factor", 1)
     new_completed = {}
     
+    # 1. Check for User Tasks in task_list
     for t in task_list:
         if t["status"] == "dispatched":
             parent_id = t["id"]
             k_task = t.get("k_factor", k_global)
             agg_task_id = f"SYSTEM_AGGREGATOR_{parent_id}"
             
-            # Check if synthesis is already done
             if agg_task_id in completed_results:
                 t["status"] = "completed"
                 new_completed[parent_id] = completed_results[agg_task_id]
-                print(f"Task {parent_id} finalized via synthesis.")
                 continue
 
-            # Gather replicas
             reps = []
             for i in range(1, k_task + 1):
                 rid = f"{parent_id}_rep{i}"
@@ -431,12 +429,9 @@ def aggregator_node(state: AgentState, config: RunnableConfig) -> dict:
             
             if len(reps) >= k_task:
                 if k_task == 1:
-                    # Single replica — promote directly, no synthesis needed
                     t["status"] = "completed"
                     new_completed[parent_id] = reps[0]
-                    print(f"Task {parent_id} completed (single replica).")
                 else:
-                    # Multiple replicas — dispatch synthesis
                     print(f"Aggregator: Dispatching synthesis for {parent_id} ({k_task} replicas)")
                     rep_text = "\n".join([f"--- Response {i+1} ---\n{r}\n" for i, r in enumerate(reps)])
                     prompt_tpl = db.get_system_prompt("SYNTHESIZER_PROMPT", SYNTHESIZER_PROMPT)
@@ -446,6 +441,39 @@ def aggregator_node(state: AgentState, config: RunnableConfig) -> dict:
                         replicas=rep_text
                     )
                     db.push_task(agg_task_id, thread_id, {"description": instruction})
+
+    # 2. Check for System Tasks (Consensus Evolution/Reflection)
+    system_check = [
+        {"id": f"SYSTEM_EVOLUTION_{thread_id}", "status_key": "awaiting_evolution", "desc": "System Evolution Synthesis"},
+        {"id": f"SYSTEM_REFLECTION_{thread_id}", "status_key": "awaiting_reflection", "desc": "System Reflection Synthesis"}
+    ]
+    
+    for s in system_check:
+        parent_id = s["id"]
+        # Only process if we haven't promoted it yet
+        if parent_id in completed_results:
+            continue
+            
+        reps = []
+        for i in range(1, 4): 
+            rid = f"{parent_id}_rep{i}"
+            if rid in completed_results:
+                reps.append(completed_results[rid])
+        
+        if len(reps) >= 3:
+            agg_task_id = f"SYSTEM_AGGREGATOR_{parent_id}"
+            if agg_task_id in completed_results:
+                new_completed[parent_id] = completed_results[agg_task_id]
+            else:
+                print(f"Aggregator: Dispatching synthesis for System Task {parent_id}")
+                rep_text = "\n".join([f"--- Response {i+1} ---\n{r}\n" for i, r in enumerate(reps)])
+                prompt_tpl = db.get_system_prompt("SYNTHESIZER_PROMPT", SYNTHESIZER_PROMPT)
+                instruction = prompt_tpl.format(
+                    k_count=len(reps),
+                    task_description=s['desc'],
+                    replicas=rep_text
+                )
+                db.push_task(agg_task_id, thread_id, {"description": instruction})
 
     return {"task_list": task_list, "completed_results": {**completed_results, **new_completed}, "status": "awaiting_aggregation"}
 
@@ -485,7 +513,10 @@ builder.add_node("verification_node", verification_node)
 
 def route_start(state: AgentState) -> str:
     status = state.get("status", "planning")
-    if status in ["aggregating", "awaiting_aggregation"]: return "aggregator_node"
+    # Priority 1: Check if we need to aggregate anything (User or System)
+    if status in ["aggregating", "awaiting_aggregation", "awaiting_evolution", "awaiting_reflection"]: 
+        return "aggregator_node"
+    
     if status == "dispatching": return "dispatcher_node"
     if status == "critiquing": return "critique_node"
     if status == "verifying": return "verification_node"
