@@ -167,7 +167,7 @@ END_FILE_WRITE
 ## Multiple Proposals
 If you have multiple independent improvements, separate them with the tag: `=== NEW_IMPROVEMENT ===`
 
-Format your response as a clear, technical proposal.
+Format your response as a clear, technical proposal."""
 
 
 def planner_node(state: AgentState, config: RunnableConfig) -> dict:
