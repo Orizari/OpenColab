@@ -601,6 +601,15 @@ def get_evolution_context(limit: int = 20) -> str:
                 
             return ctx
 
+def get_task_traces(thread_id: str) -> list[dict]:
+    """Returns all traces (reasoning/results) for a specific thread."""
+    with _lock:
+        with sqlite3.connect(QUEUE_DB_PATH, timeout=15.0) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT task_id, prompt, reasoning, result, created_at FROM task_traces WHERE thread_id = ? ORDER BY created_at ASC", (thread_id,))
+            return [dict(r) for r in cursor.fetchall()]
+
 def get_replica_stats(parent_id: str, thread_id: str) -> dict:
     """Returns the counts of replicas in different stages for a parent task."""
     with _lock:

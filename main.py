@@ -337,6 +337,7 @@ async def get_status(thread_id: str):
         "original_request": thread_info['prompt'] if thread_info else "Unknown",
         "task_list": ui_tasks,
         "completed_results": vals.get("completed_results", {}),
+        "traces": db.get_task_traces(thread_id),
         "error": vals.get("error"),
         "priority": thread_info.get("priority", 0) if thread_info else 0
     }

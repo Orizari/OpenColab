@@ -55,6 +55,8 @@ const drawerWorkerId = document.getElementById('drawerWorkerId');
 const drawerAttempts = document.getElementById('drawerAttempts');
 const drawerDescription = document.getElementById('drawerDescription');
 const drawerResult = document.getElementById('drawerResult');
+const drawerFlow = document.getElementById('drawerFlow');
+const drawerTraces = document.getElementById('drawerTraces');
 
 // Log Panel
 const logPanel = document.getElementById('logPanel');
@@ -280,6 +282,16 @@ async function pollThreadStatus() {
         }
         renderGraph(state.task_list, state.completed_results);
         
+        // Update drawer if open
+        if (taskDrawer.classList.contains('open')) {
+            const currentTaskId = drawerTaskId.textContent;
+            const task = state.task_list.find(t => (t.id || t['id']) === currentTaskId);
+            if (task) {
+                const result = getResultForTask(task.id || task['id'], state.completed_results);
+                updateDrawer(task, task.status, result, state.traces);
+            }
+        }
+        
         // Show final answer when finished
         if (state.status === 'finished' || state.status === 'completed') {
             showFinalAnswer(state.task_list, state.completed_results);
@@ -502,7 +514,7 @@ function findTaskResult(taskId, completedResults) {
     return null;
 }
 
-function updateDrawer(task, status, result) {
+function updateDrawer(task, status, result, allTraces = []) {
     const isNewTask = drawerTaskId.textContent !== task.id;
     const shouldPollLogs = ['processing', 'queued', 'dispatched'].includes(status);
     drawerTaskId.textContent = task.id;
@@ -518,7 +530,8 @@ function updateDrawer(task, status, result) {
     } else {
         drawerAttempts.style.display = 'none';
     }
-    if (logPollInterval && (isNewTask || !shouldPollLogs)) { clearInterval(logPollInterval); logPollInterval = null; }
+    
+    // 1. Result Update
     if (result) {
         drawerResult.classList.add('markdown-output');
         drawerResult.innerHTML = marked.parse(typeof result === 'string' ? result : JSON.stringify(result, null, 2));
@@ -528,8 +541,56 @@ function updateDrawer(task, status, result) {
     } else {
         drawerResult.classList.remove('markdown-output');
         if (isNewTask) drawerResult.textContent = "Waiting for worker to begin...\n";
-        if (shouldPollLogs && !logPollInterval) startLogPolling(task.id);
     }
+
+    // 2. Flow Visualization
+    updateDrawerFlow(task.replica_stats || {});
+
+    // 3. Trace Updates
+    updateDrawerTraces(task.id, allTraces, result);
+
+    if (logPollInterval && (isNewTask || !shouldPollLogs)) { clearInterval(logPollInterval); logPollInterval = null; }
+    if (shouldPollLogs && !logPollInterval) startLogPolling(task.id);
+}
+
+function updateDrawerFlow(stats) {
+    const total = (stats.planned || 0) + (stats.queued || 0) + (stats.active || 0) + (stats.done || 0);
+    if (total === 0) { drawerFlow.innerHTML = '<p class="text-muted">No replica lifecycle data available yet.</p>'; return; }
+
+    const stages = [
+        { key: 'planned', label: 'PLN', count: stats.planned || 0 },
+        { key: 'queued', label: 'QUE', count: stats.queued || 0 },
+        { key: 'active', label: 'ACT', count: stats.active || 0 },
+        { key: 'done', label: 'DON', count: stats.done || 0 }
+    ];
+
+    drawerFlow.innerHTML = stages.map(s => `
+        <div class="flow-step ${s.count > 0 ? 'active' : (s.key === 'done' && stats.done === total ? 'completed' : '')}" data-label="${s.label}">
+            ${s.count}
+        </div>
+    `).join('');
+}
+
+function updateDrawerTraces(taskId, allTraces, finalResult) {
+    const taskTraces = allTraces.filter(t => t.task_id.startsWith(taskId));
+    if (taskTraces.length === 0) {
+        drawerTraces.innerHTML = '<p class="text-muted">No individual replica activity recorded.</p>';
+        return;
+    }
+
+    drawerTraces.innerHTML = taskTraces.map(t => {
+        const replicaId = t.task_id.includes('_rep') ? t.task_id.split('_rep')[1] : 'Main';
+        return `
+            <div class="trace-item">
+                <div class="trace-item-header">
+                    <span>Replica ${replicaId}</span>
+                    <span style="opacity:0.5">${new Date(t.created_at).toLocaleTimeString()}</span>
+                </div>
+                ${t.reasoning ? `<div class="trace-reasoning">${t.reasoning}</div>` : ''}
+                <div class="trace-result">${t.result || 'Result pending...'}</div>
+            </div>
+        `;
+    }).join('');
 }
 
 function drawSvgLine(fromId, toId, layout) {

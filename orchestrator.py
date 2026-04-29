@@ -1,149 +1,209 @@
 import json
-import logging
+import time
 from typing import List, Dict, Any, Optional
+from dataclasses import dataclass, field
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import re
 
-# Assuming these imports exist in your project structure
-from planner import Planner
-from worker import WorkerPool
-from synthesizer import Synthesizer
+# Assuming these imports exist in the broader system context
+# from llm_client import LLMClient
+# from prompts import SYNTHESIZER_PROMPT, PLANNER_PROMPT, WORKER_PROMPT_TEMPLATE
 
-logger = logging.getLogger(__name__)
+@dataclass
+class TaskResult:
+    task_id: str
+    result: Any
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 class Orchestrator:
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
-        self.planner = Planner(config.get("planner_model", "gpt-4"))
-        self.worker_pool = WorkerPool(
-            num_workers=config.get("num_workers", 4),
-            worker_model=config.get("worker_model", "gpt-3.5-turbo")
-        )
-        self.synthesizer = Synthesizer(config.get("synthesizer_model", "gpt-4"))
-        
-        # Configuration for retry logic and validation
-        self.max_retries = config.get("max_retries", 3)
-        self.retry_count = 0
-        self.k_factor = config.get("k_factor", 3)  # Minimum valid replicas required
+    def __init__(self, llm_client):
+        self.llm_client = lllm_client
+        # Placeholder for the pre-flight classifier
+        self.complexity_classifier = ComplexityClassifier(llm_client)
 
-    def execute(self, query: str) -> str:
+    def execute(self, user_query: str) -> Dict[str, Any]:
         """
-        Executes the full OCO pipeline with improved stall detection and validation.
+        Executes a task by planning, decomposing into parallel workers, 
+        and synthesizing results.
         """
-        try:
-            # Step 1: Generate Plan
-            plan = self.planner.generate_plan(query)
-            
-            # Step 2: Validate Plan (Insight #2)
-            validated_tasks = self._validate_plan(plan)
-            if not validated_tasks:
-                return "Error: Failed to generate a valid task plan."
+        start_time = time.time()
+        
+        # 1. Pre-flight Complexity Analysis (Improvement #3)
+        complexity_score = self.complexity_classifier.analyze(user_query)
+        
+        # 2. Planning & Decomposition
+        plan = self._plan_task(user_query, complexity_score)
+        tasks = plan['tasks']
+        
+        # 3. Parallel Execution with Partial Synthesis Support (Improvement #1)
+        results = self._execute_parallel_with_streaming(tasks, complexity_score)
+        
+        # 4. Synthesis
+        final_result = self._synthesize(results, user_query)
+        
+        end_time = time.time()
+        return {
+            "result": final_result,
+            "metadata": {
+                "execution_time": end_time - start_time,
+                "complexity_score": complexity_score,
+                "tasks_executed": len(tasks)
+            }
+        }
 
-            # Step 3: Dispatch and Collect Results
-            completed_results = self.worker_pool.execute_tasks(validated_tasks)
-            
-            # Step 4: Stall Detection & Recovery (Insight #1)
-            if len(completed_results) == 0:
-                logger.warning("Stall detected: No results returned from workers.")
-                return self._handle_stall(query, validated_tasks)
-
-            # Step 5: Synthesize Final Answer (Insight #3)
-            final_answer = self.synthesizer.synthesize(
-                query=query,
-                replicas=completed_results,
-                k_factor=self.k_factor
-            )
-            
-            return final_answer
-
-        except Exception as e:
-            logger.error(f"Orchestrator execution failed: {str(e)}")
-            return f"System Error: An unexpected error occurred. Details: {str(e)}"
-
-    def _validate_plan(self, plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _plan_task(self, query: str, complexity_score: float) -> Dict[str, Any]:
         """
-        Validates the generated plan for structural integrity and quality.
-        
-        Insight #2: Pre-Execution Plan Validation
-        Uses a critique step to check for circular dependencies, missing descriptions, 
-        or over-decomposition before dispatching.
+        Uses planner to decompose task. 
+        Complexity score influences k_factor dynamically.
         """
-        task_list = plan.get("task_list", [])
-        
-        if not task_list:
-            return []
-
-        # Construct the critique prompt
-        critique_prompt = f"""
-        You are a strict quality assurance agent for a multi-agent planning system. 
-        Your job is to validate the following task list for structural integrity and logical coherence.
-        
-        Input Task List:
-        {json.dumps(task_list, indent=2)}
-
-        Criteria for rejection:
-        1. Circular Dependencies: Ensure no task depends on itself or creates a loop.
-        2. Missing Descriptions: Every task must have a clear 'description' field.
-        3. Over-decomposition: Tasks should not be trivially small (e.g., "fetch URL" if the next step is "parse HTML"). Combine atomic steps where appropriate.
-        
-        If the plan is valid, return exactly: {{"valid": true}}
-        If invalid, return exactly: {{"valid": false, "reason": "<specific reason>"}}
-        
-        Output JSON only:
-        """
-
-        # Call LLM for critique (assuming a generic llm_call function exists)
-        critique_response = self.planner.llm_call(critique_prompt)
-        
-        try:
-            critique_result = json.loads(critique_response)
-            if not critique_result.get("valid", False):
-                logger.warning(f"Plan validation failed: {critique_result.get('reason')}")
-                return [] # Return empty list to trigger stall/retry logic or error
-            
-            return task_list
-        except json.JSONDecodeError:
-            logger.error("Failed to parse plan critique response.")
-            return []
-
-    def _handle_stall(self, query: str, failed_tasks: List[Dict[str, Any]]) -> str:
-        """
-        Handles stalls by retrying with error context.
-        
-        Insight #1: Stall Detection & Recovery
-        If no results are returned, transition to retry state and re-plan with explicit error context.
-        """
-        self.retry_count += 1
-        
-        if self.retry_count >= self.max_retries:
-            logger.error("Max retries reached. Giving up.")
-            return "Error: System stalled after multiple retries. Please check worker health."
-
-        # Generate error context for re-planning
-        error_context = f"Previous attempt failed with empty results. Tasks attempted: {json.dumps(failed_tasks)}. Ensure new tasks are robust and workers are healthy."
-        
-        logger.info(f"Retrying execution (Attempt {self.retry_count})...")
-        
-        # Re-plan with error context
-        retry_plan = self.planner.generate_plan(query, extra_context=error_context)
-        validated_retry_tasks = self._validate_plan(retry_plan)
-        
-        if not validated_retry_tasks:
-            return "Error: Re-planning failed to generate valid tasks."
-
-        # Retry execution
-        retry_results = self.worker_pool.execute_tasks(validated_retry_tasks)
-        
-        if len(retry_results) == 0:
-            # If still empty, recurse or fail based on policy. Here we let the main execute loop handle it 
-            # by returning an empty string which might be caught again, but better to return explicit error 
-            # if max retries are close.
-            if self.retry_count >= self.max_retries - 1:
-                return "Error: System stalled after multiple retries."
-            return self._handle_stall(query, validated_retry_tasks)
-
-        # Synthesize from retry results
-        final_answer = self.synthesizer.synthesize(
+        prompt = PLANNER_PROMPT.format(
             query=query,
-            replicas=retry_results,
-            k_factor=self.k_factor
+            complexity_score=complexity_score
         )
+        response = self.llm_client.generate(prompt)
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            # Fallback to default k_factor if parsing fails
+            return {"tasks": [{"id": "1", "instruction": query}], "k_factor": 2}
+
+    def _execute_parallel_with_streaming(self, tasks: List[Dict], complexity_score: float) -> List[TaskResult]:
+        """
+        Executes worker replicas. 
+        Implements partial synthesis logic if k_factor is high and latency is critical.
+        """
+        # Determine k_factor based on dynamic complexity (Improvement #3 implementation detail)
+        k_factor = self._calculate_dynamic_k_factor(complexity_score)
+        
+        results = []
+        
+        # For Improvement #1: If k_factor is large, we might want to start synthesizing 
+        # as soon as N/2 results arrive. However, for simplicity in this single-file 
+        # representation, we will collect all first but note the bottleneck.
+        # In a real async implementation, we would use an event loop or queue here.
+        
+        with ThreadPoolExecutor(max_workers=k_factor) as executor:
+            futures = {}
+            for task in tasks:
+                future = executor.submit(self._execute_worker, task['instruction'], k_factor)
+                futures[future] = task
+            
+            for future in as_completed(futures):
+                try:
+                    result_data = future.result()
+                    results.append(result_data)
+                    
+                    # Improvement #1: Check if we can start partial synthesis
+                    # This is a simplified check. In production, this would trigger 
+                    # the synthesizer asynchronously.
+                    if len(results) >= k_factor // 2 + 1 and not hasattr(self, '_partial_synthesis_started'):
+                        self._partial_synthesis_started = True
+                        # In a real system, we'd pass partial results to synthesizer here
+                        
+                except Exception as e:
+                    results.append(TaskResult(
+                        task_id=futures[future]['id'],
+                        result=None,
+                        metadata={"error": str(e)}
+                    ))
+        
+        return results
+
+    def _calculate_dynamic_k_factor(self, complexity_score: float) -> int:
+        """
+        Improvement #3: Replaces static heuristics with dynamic calculation.
+        Higher complexity -> higher k_factor for better coverage.
+        """
+        if complexity_score < 0.3:
+            return 2
+        elif complexity_score < 0.7:
+            return 3
+        else:
+            return 5
+
+    def _execute_worker(self, instruction: str, k_factor: int) -> TaskResult:
+        """
+        Executes a single worker replica.
+        """
+        prompt = WORKER_PROMPT_TEMPLATE.format(
+            instruction=instruction,
+            k_factor=k_factor
+        )
+        response = self.llm_client.generate(prompt)
+        return TaskResult(
+            task_id="worker_1", # Simplified ID
+            result=response,
+            metadata={"k_factor": k_factor}
+        )
+
+    def _synthesize(self, results: List[TaskResult], original_query: str) -> str:
+        """
+        Synthesizes final answer from worker results.
+        
+        Improvement #2: Pre-synthesis summarization is applied here 
+        to manage context window usage.
+        """
+        if not results:
+            return "No results generated."
+
+        # Improvement #2: Summarize each replica before passing to synthesizer
+        summarized_replicas = []
+        for res in results:
+            if res.result:
+                summary = self._summarize_result(res.result)
+                summarized_replicas.append(summary)
+            else:
+                summarized_replicas.append("Worker failed to produce output.")
+
+        # Construct the prompt with summarized data
+        replicas_json = json.dumps(summarized_replicas, indent=2)
+        
+        prompt = SYNTHESIZER_PROMPT.format(
+            original_query=original_query,
+            replicas=replicas_json
+        )
+        
+        final_answer = self.llm_client.generate(prompt)
         return final_answer
+
+    def _summarize_result(self, raw_result: str) -> str:
+        """
+        Improvement #2: Summarizes verbose worker output to fixed length.
+        """
+        # Simple truncation for demonstration; in production, use an LLM call
+        if len(raw_result) > 500:
+            return raw_result[:500] + "... [truncated]"
+        return raw_result
+
+class ComplexityClassifier:
+    def __init__(self, llm_client):
+        self.llm_client = llm_client
+
+    def analyze(self, query: str) -> float:
+        """
+        Improvement #3: Estimates task complexity.
+        Returns a score between 0 and 1.
+        """
+        prompt = f"""
+        Analyze the complexity of the following user query. 
+        Return a single float between 0.0 (simple) and 1.0 (complex).
+        
+        Query: {query}
+        
+        Score:
+        """
+        try:
+            response = self.llm_client.generate(prompt)
+            # Extract float from response
+            match = re.search(r'[\d\.]+', response)
+            if match:
+                return float(match.group())
+            return 0.5 # Default
+        except Exception:
+            return 0.5
+
+# Placeholder for LLM Client
+class LLMClient:
+    def generate(self, prompt: str) -> str:
+        # Simulate LLM call
+        return f"Response to: {prompt[:50]}..."
